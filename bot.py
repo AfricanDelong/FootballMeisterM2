@@ -1128,7 +1128,7 @@ def get_main_keyboard(lang: Language):
     builder.button(text=t["collection"], callback_data="collection_start")
 
     builder.button(text=t["profile"], callback_data="profile")
-    builder.button(text=t["mini_game"], callback_data="packs")
+    builder.button(text=t["mini_game"], callback_data="play_casino")
 
     builder.button(text=t["battle_mode"], callback_data="battle_mode")
     builder.button(text=t["candy_shop"], callback_data="candy_shop")
@@ -3853,3 +3853,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
+
