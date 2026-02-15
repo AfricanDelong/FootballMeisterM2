@@ -526,7 +526,7 @@ TRANSLATIONS = {
         "dice_cost": "Стоимость: 100 монет",
         "not_enough_coins_dice": "❌ У вас недостаточно монет для игры!",
         "play_casino": "🎮 Мини-игры",
-        "mg_volleyball": "🏐 Влейбол-кольцо",
+        "mg_volleyball": "🏀 Баскетбольное-кольцо",
         "mg_darts": "🎯 Дартс",
         "mg_bowling": "🎳 Боулинг",
         "mg_anim": "✨ Играем...",
@@ -1128,6 +1128,7 @@ def get_main_keyboard(lang: Language):
     builder.button(text=t["collection"], callback_data="collection_start")
 
     builder.button(text=t["profile"], callback_data="profile")
+    # мини-игры должны вести в раздел мини-игр
     builder.button(text=t["mini_game"], callback_data="play_casino")
 
     builder.button(text=t["battle_mode"], callback_data="battle_mode")
@@ -1297,7 +1298,6 @@ def get_packs_keyboard(lang: Language):
         callback_data="buy_ultra"
     )
     builder.button(text=t["free_pack"], callback_data="free_pack_menu")
-    builder.button(text=t.get("stars_shop", "⭐ Stars"), callback_data="stars_shop")
     builder.button(text=t["back"], callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -1532,49 +1532,41 @@ def get_text_main_menu(user: UserData) -> str:
 
 
 def build_packs_page_text(user: UserData) -> str:
-    """Текст страницы паков (информативно, без публичных шансов)."""
+    """Текст страницы паков.
+
+    По ТЗ: на странице паков оставляем только баланс (в столбик) и информацию о сплавке.
+    Всё остальное визуально занимает фон packs.png.
+    """
     t = TRANSLATIONS[user.language]
     stars = getattr(user, "stars_balance", 0)
 
     if user.language == Language.RU:
         return (
-            f"🧩 <b>{t['packs']}</b>\n"
+            f"📦 <b>{t['packs']}</b>\n"
             f"━━━━━━━━━━━━━━\n"
             f"💰 <b>Ваш баланс</b>\n"
-            f"{t['coins']}: <b>{user.coins}</b>   {t['gems']}: <b>{user.gems}</b>   ⭐ Stars: <b>{stars}</b>\n"
-            f"━━━━━━━━━━━━━━\n\n"
-            f"📦 <b>{t['basic_pack']}</b> — 1 карточка\n"
-            f"• Цена: <b>{PACK_PRICES['basic']['coins']} {t['coins']}</b>\n"
-            f"• Хороший выбор для постоянного открытия и сплавки дубликатов.\n\n"
-            f"💎 <b>{t['premium_pack']}</b> — 1 карточка\n"
-            f"• Цена: <b>{PACK_PRICES['premium']['gems']} {t['gems']}</b>\n"
-            f"• Шансы на высокие редкости здесь заметно повышены.\n\n"
-            f"🔥 <b>Ультра‑Пак</b> — 1 карточка\n"
-            f"• Цена: <b>{PACK_PRICES['ultra']['gems']} {t['gems']}</b>\n"
-            f"• Гарант: <b>Легендарная</b> или <b>Мифическая</b> (внутри шанс повышен).\n\n"
+            f"{t['coins']}: <b>{user.coins}</b> 🪙\n"
+            f"{t['gems']}: <b>{user.gems}</b> 💎\n"
+            f"{t['candies']}: <b>{user.candies}</b> 🍬\n"
+            f"⭐ Stars: <b>{stars}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
             f"♻️ <b>Сплавка</b>\n"
-            f"• Сплавляйте дубликаты и получайте 🍬 конфеты.\n"
-            f"• Конфеты тратятся в 🍬 Конфетной лавке на особые карточки.\n\n"
-            f"⭐ <b>Stars</b>\n"
-            f"• Пополняйте ⭐ баланс в боте и тратьте на покупки (например, на 💎 алмазы).\n"
+            f"Сплавляйте 5 дубликатов, чтобы получить 🍬 конфеты.\n"
+            f"Конфеты тратятся в 🍬 Конфетной лавке на особые карточки."
         )
     else:
         return (
-            f"🧩 <b>{t['packs']}</b>\n"
+            f"📦 <b>{t['packs']}</b>\n"
             f"━━━━━━━━━━━━━━\n"
             f"💰 <b>Your balance</b>\n"
-            f"{t['coins']}: <b>{user.coins}</b>   {t['gems']}: <b>{user.gems}</b>   ⭐ Stars: <b>{stars}</b>\n"
-            f"━━━━━━━━━━━━━━\n\n"
-            f"📦 <b>{t['basic_pack']}</b> — 1 card\n"
-            f"• Price: <b>{PACK_PRICES['basic']['coins']} {t['coins']}</b>\n\n"
-            f"💎 <b>{t['premium_pack']}</b> — 1 card\n"
-            f"• Price: <b>{PACK_PRICES['premium']['gems']} {t['gems']}</b>\n"
-            f"• Better odds for high rarities.\n\n"
-            f"🔥 <b>Ultra Pack</b> — 1 card\n"
-            f"• Price: <b>{PACK_PRICES['ultra']['gems']} {t['gems']}</b>\n"
-            f"• Guaranteed <b>Legendary</b> or <b>Mythic</b>.\n\n"
-            f"♻️ <b>Fusion</b>: get 🍬 candies from duplicates.\n"
-            f"⭐ <b>Stars</b>: top up in-bot and spend on purchases.\n"
+            f"{t['coins']}: <b>{user.coins}</b> 🪙\n"
+            f"{t['gems']}: <b>{user.gems}</b> 💎\n"
+            f"{t['candies']}: <b>{user.candies}</b> 🍬\n"
+            f"⭐ Stars: <b>{stars}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"♻️ <b>Fusion</b>\n"
+            f"Fuse 5 duplicates to get 🍬 candies.\n"
+            f"Candies can be spent in the Candy Shop for special cards."
         )
 
 def get_minigames_text(user: UserData) -> str:
@@ -1672,11 +1664,15 @@ def get_text_free_packs(user: UserData):
             f"🎲 У вас {user.free_packs} бесплатных паков!"
         )
     else:
-        time_left = user.get_free_packs_time_left()
+        # если все бесплатные паки израсходованы, не показываем таймер с {time}
+        # (по ТЗ: заменить на «обновятся совсем скоро»)
+        soon_line = (
+            "⏰ Бесплатные паки обновятся совсем скоро ⏰"
+            if user.language == Language.RU
+            else "⏰ Free packs will refresh very soon ⏰"
+        )
         text = (
-            f"⏰ <b>{t['free_pack_timer']}</b>\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"{t['no_free_packs'].format(time=time_left)}\n"
+            f"{soon_line}\n"
             f"━━━━━━━━━━━━━━\n"
             f"{t['free_pack_desc']}"
         )
@@ -1952,14 +1948,14 @@ async def callback_packs(callback: CallbackQuery):
     user = user_manager.get_user(user_id, username)
     t = TRANSLATIONS[user.language]
     text = build_packs_page_text(user)
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=get_packs_keyboard(user.language), parse_mode="HTML")
-    else:
-        try:
-            await callback.message.edit_text(text, reply_markup=get_packs_keyboard(user.language), parse_mode="HTML")
-        except TelegramBadRequest:
-            await callback.message.answer(text, reply_markup=get_packs_keyboard(user.language), parse_mode="HTML")
+    # По ТЗ: основное место занимает фон packs.png
+    await render_page(
+        callback,
+        image_basename="packs",
+        text=text,
+        reply_markup=get_packs_keyboard(user.language),
+        force_new_message=True,
+    )
     await callback.answer()
 
 @dp.callback_query(F.data.in_(["buy_basic", "buy_premium", "buy_free", "buy_ultra"]))
@@ -2001,6 +1997,8 @@ async def callback_buy_pack(callback: CallbackQuery):
     card["user_card_id"] = user.card_id_counter
     user.card_id_counter += 1
     user.collection.append(card)
+    # учитываем открытие любых паков (не только бесплатных)
+    user.packs_opened_total = int(getattr(user, "packs_opened_total", 0)) + 1
     user_manager.save_user(user)
     
     caption = build_drop_caption(card, user.language, CARD_LIFETIME_SECONDS)
@@ -2034,16 +2032,13 @@ async def callback_mini_game(callback: CallbackQuery):
     user = user_manager.get_user(user_id, username)
     t = TRANSLATIONS[user.language]
 
-    text = (
-        f"🎮 <b>{t['mini_game']}</b>\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"Выберите мини-игру:"
-    )
+    # По ТЗ: при входе в «Мини Игры» сразу показываем список мини-игр (боулинг/дартс и т.д.)
+    text = get_minigames_text(user)
     await render_page(
         callback,
         image_basename="minigames",
         text=text,
-        reply_markup=get_mini_game_keyboard(user.language),
+        reply_markup=get_casino_keyboard(user.language, show_back=True),
     )
     await callback.answer()
 
@@ -3853,4 +3848,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
-
