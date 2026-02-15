@@ -193,7 +193,7 @@
   },
   {
     "id": 13,
-    "name_ru": "Лукас Шевалье",
+    "name_ru": "Люка Шевалье",
     "name_en": "Lucas Chevalier",
     "rarity": "common",
     "rarity_name_ru": "Обычная",
@@ -202,7 +202,7 @@
     "country_en": "🇫🇷 France",
     "position_ru": "Вратарь",
     "position_en": "Goalkeeper",
-    "ovr": 78,
+    "ovr": 62,
     "description_ru": "Стабильный игрок из 🇫🇷 Франция. Играет на позиции «Вратарь» и ценится за то, что быстро реагирует на удары и уверенно играет на выходах. При рейтинге 78 он часто выделяется тем, что любит начинать атаки пасом. Интересный факт: На тренировках спорит с партнёрами на точность: попадание в перекладину — его любимая ставка.",
     "description_en": "A reliable footballer from 🇫🇷 France. Plays as a Goalkeeper and is valued because he reacts quickly to shots and is confident claiming crosses. With an 78 OVR he often stands out for how he likes starting attacks with passing. Fun fact: He reviews games frame by frame and writes good decisions down like chess moves.",
     "image": "chevalier.png"
@@ -218,7 +218,7 @@
     "country_en": "🇷🇺 Russia",
     "position_ru": "Вратарь",
     "position_en": "Goalkeeper",
-    "ovr": 78,
+    "ovr": 62,
     "description_ru": "Стабильный игрок из 🇷🇺 Россия. Играет на позиции «Вратарь» и ценится за то, что быстро реагирует на удары и уверенно играет на выходах. При рейтинге 78 он часто выделяется тем, что любит начинать атаки пасом. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇷🇺 Russia. Plays as a Goalkeeper and is valued because he reacts quickly to shots and is confident claiming crosses. With an 78 OVR he often stands out for how he likes starting attacks with passing. Fun fact: Collects boots from different eras and can recognize models by tiny details.",
     "image": "safonov.png"
@@ -234,7 +234,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 81,
+    "ovr": 61,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 81 он часто выделяется тем, что опасен при стандартах. Интересный факт: Перед матчем всегда делает один и тот же ритуал разминки — и команда считает это талисманом удачи.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 81 OVR he often stands out for how he is dangerous on set pieces. Fun fact: On the training ground he bets on accuracy — hitting the crossbar is his favorite challenge.",
     "image": "pau_torres.png"
@@ -250,7 +250,7 @@
     "country_en": "🇧🇷 Brazil",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 79,
+    "ovr": 62,
     "description_ru": "Стабильный игрок из 🇧🇷 Бразилия. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 79 он часто выделяется тем, что опасен при стандартах. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇧🇷 Brazil. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 79 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Rumor has it he practices striking with oranges to master weight and trajectory.",
     "image": "gabriel_paulista.png"
@@ -282,7 +282,7 @@
     "country_en": "🇧🇫 Burkina Faso",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 80,
+    "ovr": 62,
     "description_ru": "Стабильный игрок из 🇧🇫 Буркина-Фасо. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 80 он часто выделяется тем, что опасен при стандартах. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇧🇫 Burkina Faso. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 80 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Collects boots from different eras and can recognize models by tiny details.",
     "image": "tapsoba.png"
@@ -298,7 +298,7 @@
     "country_en": "🏴󠁧󠁢󠁥󠁮󠁧󠁿 England",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 83,
+    "ovr": 64,
     "description_ru": "Стабильный игрок из 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Англия. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 83 он часто выделяется тем, что опасен при стандартах. Интересный факт: Коллекционирует бутсы разных эпох и может по памяти назвать модель по шву на пятке.",
     "description_en": "A reliable footballer from 🏴󠁧󠁢󠁥󠁮󠁧󠁿 England. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 83 OVR he often stands out for how he is dangerous on set pieces. Fun fact: On the training ground he bets on accuracy — hitting the crossbar is his favorite challenge.",
     "image": "stones.png"
@@ -314,7 +314,7 @@
     "country_en": "🇨🇴 Colombia",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 80,
+    "ovr": 62,
     "description_ru": "Стабильный игрок из 🇨🇴 Колумбия. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 80 он часто выделяется тем, что опасен при стандартах. Интересный факт: Коллекционирует бутсы разных эпох и может по памяти назвать модель по шву на пятке.",
     "description_en": "A reliable footballer from 🇨🇴 Colombia. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 80 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Rumor has it he practices striking with oranges to master weight and trajectory.",
     "image": "davinson_sanchez.png"
@@ -330,7 +330,7 @@
     "country_en": "🇫🇷 France",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 82,
+    "ovr": 63,
     "description_ru": "Стабильный игрок из 🇫🇷 Франция. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 82 он часто выделяется тем, что опасен при стандартах. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇫🇷 France. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 82 OVR he often stands out for how he is dangerous on set pieces. Fun fact: He reviews games frame by frame and writes good decisions down like chess moves.",
     "image": "laporte.png"
@@ -362,7 +362,7 @@
     "country_en": "🇳🇱 Netherlands",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 81,
+    "ovr": 61,
     "description_ru": "Стабильный игрок из 🇳🇱 Нидерланды. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 81 он часто выделяется тем, что опасен при стандартах. Интересный факт: На тренировках спорит с партнёрами на точность: попадание в перекладину — его любимая ставка.",
     "description_en": "A reliable footballer from 🇳🇱 Netherlands. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 81 OVR he often stands out for how he is dangerous on set pieces. Fun fact: He reviews games frame by frame and writes good decisions down like chess moves.",
     "image": "botman.png"
@@ -378,7 +378,7 @@
     "country_en": "🇫🇷 France",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 79,
+    "ovr": 61,
     "description_ru": "Стабильный игрок из 🇫🇷 Франция. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 79 он часто выделяется тем, что опасен при стандартах. Интересный факт: Коллекционирует бутсы разных эпох и может по памяти назвать модель по шву на пятке.",
     "description_en": "A reliable footballer from 🇫🇷 France. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 79 OVR he often stands out for how he is dangerous on set pieces. Fun fact: On the training ground he bets on accuracy — hitting the crossbar is his favorite challenge.",
     "image": "kalulu.png"
@@ -394,7 +394,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 81,
+    "ovr": 63,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 81 он часто выделяется тем, что опасен при стандартах. Интересный факт: Коллекционирует бутсы разных эпох и может по памяти назвать модель по шву на пятке.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 81 OVR he often stands out for how he is dangerous on set pieces. Fun fact: He reviews games frame by frame and writes good decisions down like chess moves.",
     "image": "lenormand.png"
@@ -410,7 +410,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 76,
+    "ovr": 60,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 76 он часто выделяется тем, что опасен при стандартах. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 76 OVR he often stands out for how he is dangerous on set pieces. Fun fact: He reviews games frame by frame and writes good decisions down like chess moves.",
     "image": "huijsen.png"
@@ -426,7 +426,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 75,
+    "ovr": 59,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 75 он часто выделяется тем, что опасен при стандартах. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 75 OVR he often stands out for how he is dangerous on set pieces. Fun fact: He reviews games frame by frame and writes good decisions down like chess moves.",
     "image": "asencio.png"
@@ -442,7 +442,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 77,
+    "ovr": 63,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 77 он часто выделяется тем, что опасен при стандартах. Интересный факт: Перед матчем всегда делает один и тот же ритуал разминки — и команда считает это талисманом удачи.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 77 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Collects boots from different eras and can recognize models by tiny details.",
     "image": "cubarsi.png"
@@ -458,7 +458,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 80,
+    "ovr": 63,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 80 он часто выделяется тем, что опасен при стандартах. Интересный факт: Коллекционирует бутсы разных эпох и может по памяти назвать модель по шву на пятке.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 80 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Has a pre‑match warm‑up ritual the squad treats as a lucky charm.",
     "image": "inigo_martinez.png"
@@ -474,7 +474,7 @@
     "country_en": "🇪🇸 Spain",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 79,
+    "ovr": 62,
     "description_ru": "Стабильный игрок из 🇪🇸 Испания. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 79 он часто выделяется тем, что опасен при стандартах. Интересный факт: Говорят, что он тренирует удар по мячам… апельсинами, чтобы чувствовать вес и траекторию.",
     "description_en": "A reliable footballer from 🇪🇸 Spain. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 79 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Collects boots from different eras and can recognize models by tiny details.",
     "image": "eric_garcia.png"
@@ -490,7 +490,7 @@
     "country_en": "🇵🇹 Portugal",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 84,
+    "ovr": 65,
     "description_ru": "Стабильный игрок из 🇵🇹 Португалия. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 84 он часто выделяется тем, что опасен при стандартах. Интересный факт: Перед матчем всегда делает один и тот же ритуал разминки — и команда считает это талисманом удачи.",
     "description_en": "A reliable footballer from 🇵🇹 Portugal. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 84 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Collects boots from different eras and can recognize models by tiny details.",
     "image": "ruben_dias.png"
@@ -506,7 +506,7 @@
     "country_en": "🇺🇿 Uzbekistan",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 76,
+    "ovr": 61,
     "description_ru": "Стабильный игрок из 🇺🇿 Узбекистан. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 76 он часто выделяется тем, что опасен при стандартах. Интересный факт: На тренировках спорит с партнёрами на точность: попадание в перекладину — его любимая ставка.",
     "description_en": "A reliable footballer from 🇺🇿 Uzbekistan. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 76 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Rumor has it he practices striking with oranges to master weight and trajectory.",
     "image": "khusanov.png"
@@ -522,7 +522,7 @@
     "country_en": "🇮🇹 Italy",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 83,
+    "ovr": 65,
     "description_ru": "Стабильный игрок из 🇮🇹 Италия. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 83 он часто выделяется тем, что опасен при стандартах. Интересный факт: На тренировках спорит с партнёрами на точность: попадание в перекладину — его любимая ставка.",
     "description_en": "A reliable footballer from 🇮🇹 Italy. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 83 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Rumor has it he practices striking with oranges to master weight and trajectory.",
     "image": "bastoni.png"
@@ -538,7 +538,7 @@
     "country_en": "🇮🇹 Italy",
     "position_ru": "Защитник",
     "position_en": "Defender",
-    "ovr": 82,
+    "ovr": 64,
     "description_ru": "Стабильный игрок из 🇮🇹 Италия. Играет на позиции «Защитник» и ценится за то, что жёстко встречает соперника и читает эпизоды на шаг вперёд. При рейтинге 82 он часто выделяется тем, что опасен при стандартах. Интересный факт: Перед матчем всегда делает один и тот же ритуал разминки — и команда считает это талисманом удачи.",
     "description_en": "A reliable footballer from 🇮🇹 Italy. Plays as a Defender and is valued because he meets attackers aggressively and reads situations a step ahead. With an 82 OVR he often stands out for how he is dangerous on set pieces. Fun fact: Rumor has it he practices striking with oranges to master weight and trajectory.",
     "image": "dimarco.png"
