@@ -1,19 +1,22 @@
 import asyncio
 import logging
 import random
+import uuid
 import json
 import os
 import re
 import html
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 from enum import Enum
-
+from typing import Optional
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     InlineKeyboardButton, InlineKeyboardMarkup,
-    CallbackQuery, Message, FSInputFile
+    CallbackQuery, Message, FSInputFile,
+    BotCommand, BotCommandScopeDefault,
+    LabeledPrice, PreCheckoutQuery
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -30,10 +33,126 @@ bot = Bot(token=TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+
+
+logger = logging.getLogger("FootballCollector")
+
+async def safe_edit_or_send(message: Message, text: str, reply_markup: InlineKeyboardMarkup | None = None):
+    """Safely edits message text/caption or sends a new one if Telegram doesn't allow editing."""
+    try:
+        # If message has text (regular message), edit_text works
+        if getattr(message, "text", None) is not None:
+            await message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+            return
+        # If this is a photo/caption message
+        if getattr(message, "caption", None) is not None:
+            await message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="HTML")
+            return
+        # Fallback: can't edit -> send new
+        await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
+    except TelegramBadRequest as e:
+        # Common: 'there is no text in the message to edit' / 'message is not modified' / etc.
+        try:
+            if getattr(message, "caption", None) is not None:
+                await message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="HTML")
+                return
+        except Exception:
+            pass
+        await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
+
+async def send_page(
+    message: Message,
+    *,
+    image_basename: str,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+):
+    """Отправляет страницу как фото+caption (если есть фон) или обычным сообщением."""
+    img_path = get_existing_image_path(image_basename) if "get_existing_image_path" in globals() else None
+    if img_path and os.path.exists(img_path):
+        await message.answer_photo(
+            photo=FSInputFile(img_path),
+            caption=text,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
+
+
+
+# file_id анимированных стикеров/анимаций для мини-игр (укажи свои)
+# Можно задать общий MINIGAME_STICKER_FILE_ID, а можно отдельные для каждой игры.
+MINIGAME_STICKER_FILE_ID = os.getenv("MINIGAME_STICKER_FILE_ID", "")
+MINIGAME_STICKER_BASKETBALL_FILE_ID = os.getenv("MINIGAME_STICKER_BASKETBALL_FILE_ID", MINIGAME_STICKER_FILE_ID)
+MINIGAME_STICKER_DARTS_FILE_ID = os.getenv("MINIGAME_STICKER_DARTS_FILE_ID", MINIGAME_STICKER_FILE_ID)
+MINIGAME_STICKER_BOWLING_FILE_ID = os.getenv("MINIGAME_STICKER_BOWLING_FILE_ID", MINIGAME_STICKER_FILE_ID)
+
 # ================ ПУТИ К КАРТИНКАМ ================
 IMAGES_PATH = "images"
 BACKGROUND_IMAGE_FILENAME = "backgrauond.png"
+PROFILE_IMAGE_BASENAME = "profile"
 os.makedirs(IMAGES_PATH, exist_ok=True)
+
+def get_existing_image_path(basename: str) -> str | None:
+    """Ищет файл изображения по базовому имени в папке images.
+    Поддерживаемые расширения: png, jpg, jpeg, webp.
+    """
+    for ext in ("png", "jpg", "jpeg", "webp"):
+        p = os.path.join(IMAGES_PATH, f"{basename}.{ext}")
+        if os.path.exists(p):
+            return p
+    p2 = os.path.join(IMAGES_PATH, basename)
+    if os.path.exists(p2):
+        return p2
+    return None
+
+
+async def render_page(
+    callback: CallbackQuery,
+    *,
+    image_basename: str,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    force_new_message: bool = False,
+):
+    """Показывает страницу как:
+    - фото + подпись (если images/<basename>.* существует)
+    - иначе как обычный текст.
+    Умеет безопасно работать с edit_text/edit_caption, чтобы не падать на сообщениях без текста.
+    """
+    img_path = get_existing_image_path(image_basename)
+    if img_path:
+        # Для простоты и надёжности: удаляем исходное сообщение и шлём новое с фоном
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer_photo(
+            FSInputFile(img_path),
+            caption=text,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+        )
+        return
+
+    # Без фона — редактируем текущий месседж, где возможно
+    if force_new_message:
+        await callback.message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
+        return
+
+    try:
+        await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    except TelegramBadRequest as e:
+        # Частый кейс: сообщение с фото без текста — тогда пытаемся edit_caption
+        if "no text in the message to edit" in str(e) and getattr(callback.message, "caption", None) is not None:
+            try:
+                await callback.message.edit_caption(text, reply_markup=reply_markup, parse_mode="HTML")
+                return
+            except TelegramBadRequest:
+                pass
+        await callback.message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
+
 
 CARD_LIFETIME_SECONDS = 5
 
@@ -44,7 +163,42 @@ RARITY_ALIASES = {
     "epic": "epic", "эпическая": "epic", "эпик": "epic",
     "legendary": "legendary", "легендарная": "legendary", "лега": "legendary",
     "mythic": "mythic", "мифическая": "mythic", "мифик": "mythic",
+    "candy": "candy", "конфетная": "candy", "конфетный": "candy", "🍬": "candy",
 }
+
+async def send_minigame_sticker(
+    chat_id: int,
+    *,
+    file_id: str,
+    reply_to_message_id: int | None = None,
+) -> Message | None:
+    """Отправляет анимированный стикер/анимацию для мини-игр и возвращает Message.
+    Если file_id пустой, ничего не отправляет.
+    """
+    if not file_id:
+        return None
+    try:
+        return await bot.send_sticker(chat_id, sticker=file_id, reply_to_message_id=reply_to_message_id)
+    except Exception:
+        return None
+    except Exception:
+        # если передали не sticker file_id, пробуем как animation
+        try:
+            return await bot.send_animation(chat_id, MINIGAME_STICKER_FILE_ID, reply_to_message_id=reply_to_message_id)
+        except Exception:
+            return None
+
+async def delete_message_safely(msg: Message | None, delay: float = 0):
+    if not msg:
+        return
+    if delay:
+        await asyncio.sleep(delay)
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+
 
 def normalize_rarity(value: str) -> str:
     if not value:
@@ -87,29 +241,7 @@ FOOTBALL_PLAYERS = load_players()
 IMAGE_CACHE = {}
 TG_FILE_ID_CACHE = {}
 
-
-async def show_page_with_bg(target_message: Message, bg_filename: str, caption: str, reply_markup=None):
-    """Показывает страницу с фоном (если файл существует), иначе обычным текстом.
-    Работает и для Message, и для callback.message (передаём именно Message).
-    """
-    bg_path = os.path.join(IMAGES_PATH, bg_filename)
-    try:
-        # чтобы не словить 'message to edit not found' — проще удалить и прислать заново
-        await target_message.delete()
-    except TelegramBadRequest:
-        pass
-
-    if os.path.exists(bg_path):
-        await target_message.answer_photo(
-            photo=FSInputFile(bg_path),
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode="HTML"
-        )
-    else:
-        await target_message.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
-
-def get_card_media(card: dict) -> Optional[Union[str, FSInputFile]]:
+def get_card_media(card: dict) -> Optional[str | FSInputFile]:
     """Умная загрузка картинки с 3 уровнями кеша."""
     if not card.get("image"):
         return None
@@ -156,6 +288,80 @@ def get_user_display_name(user) -> str:
         return f"ID: {user.user_id}"
     return "Неизвестный игрок"
 
+def build_profile_text(user: "UserData") -> str:
+    """Строит текст профиля (используется и в /profile, и в кнопке)."""
+    t = TRANSLATIONS[user.language]
+
+    total = len(user.collection)
+    common = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "common"])
+    rare = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "rare"])
+    epic = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "epic"])
+    legendary = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "legendary"])
+    mythic = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "mythic"])
+    candy_count = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "candy"])
+
+    display_name = get_user_display_name(user)
+
+    if user.language == Language.RU:
+        title = f"👤 <b>Профиль</b> {display_name}"
+        balance = "Баланс"
+        stats = "Статистика"
+        collection_title = "Коллекция"
+        text = (
+            f"{title}\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💰 <b>{balance}</b>\n"
+            f"{t['coins']}: <b>{user.coins}</b> 🪙\n"
+            f"{t['gems']}: <b>{user.gems}</b> 💎\n"            f"⭐ Stars: <b>{user.stars_balance}</b>\n"
+            f"{t['candies']}: <b>{user.candies}</b> 🍬\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"📈 <b>{stats}</b>\n"
+            f"🏆 {t['elo']}: <b>{getattr(user, 'elo', 1000)}</b>\n"
+            f"{t['packs_opened_total']}: <b>{getattr(user, 'packs_opened_total', 0)}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"📚 <b>{collection_title}</b>\n"
+            f"Всего: <b>{total}</b>\n"
+            f"🟢 {t['sort_common']}: <b>{common}</b>\n"
+            f"🔵 {t['sort_rare']}: <b>{rare}</b>\n"
+            f"🟣 {t['sort_epic']}: <b>{epic}</b>\n"
+            f"🟡 {t['sort_legendary']}: <b>{legendary}</b>\n"
+            f"🔴 {t['sort_mythic']}: <b>{mythic}</b>\n"
+        )
+        # Конфетная редкость появляется только после получения
+        if candy_count > 0:
+            text += f"🍬 Конфетные: <b>{candy_count}</b>\n"
+        return text
+    else:
+        title = f"👤 <b>Profile</b> {display_name}"
+        balance = "Balance"
+        stats = "Stats"
+        collection_title = "Collection"
+        text = (
+            f"{title}\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💰 <b>{balance}</b>\n"
+            f"{t['coins']}: <b>{user.coins}</b> 🪙\n"
+            f"{t['gems']}: <b>{user.gems}</b> 💎\n"
+            f"{t['candies']}: <b>{user.candies}</b> 🍬\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"📈 <b>{stats}</b>\n"
+            f"🏆 {t['elo']}: <b>{getattr(user, 'elo', 1000)}</b>\n"
+            f"{t['packs_opened_total']}: <b>{getattr(user, 'packs_opened_total', 0)}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"📚 <b>{collection_title}</b>\n"
+            f"Total: <b>{total}</b>\n"
+            f"🟢 {t['sort_common']}: <b>{common}</b>\n"
+            f"🔵 {t['sort_rare']}: <b>{rare}</b>\n"
+            f"🟣 {t['sort_epic']}: <b>{epic}</b>\n"
+            f"🟡 {t['sort_legendary']}: <b>{legendary}</b>\n"
+            f"🔴 {t['sort_mythic']}: <b>{mythic}</b>\n"
+        )
+        if candy_count > 0:
+            text += f"🍬 Candy: <b>{candy_count}</b>\n"
+        return text
+
+
+
 # ================ СПЛАВКА ДУБЛИКАТОВ ================
 RARITY_UPGRADE_MAP = {
     "common": "rare",
@@ -163,6 +369,23 @@ RARITY_UPGRADE_MAP = {
     "epic": "legendary",
     "legendary": "mythic",
 }
+
+# 🍬 Награда за сплавку (за 5 дубликатов)
+# Рандом зависит от редкости. Максимум за одну сплавку — 60 🍬.
+CANDY_REWARD_RANGES = {
+    "common": (2, 6),
+    "rare": (5, 12),
+    "epic": (10, 22),
+    "legendary": (18, 35),
+    "mythic": (28, 60),
+    "candy": (35, 60),
+}
+
+def get_candies_for_fuse(rarity: str) -> int:
+    r = normalize_rarity(rarity)
+    low, high = CANDY_REWARD_RANGES.get(r, (2, 6))
+    gained = random.randint(low, high)
+    return min(60, max(0, int(gained)))
 
 def card_identity_key(card: dict):
     name = card.get("name_en") or card.get("name_ru") or card.get("name") or ""
@@ -177,6 +400,20 @@ def count_duplicates(collection: list, target_card: dict) -> int:
 class SearchStates(StatesGroup):
     waiting_for_query = State()
 
+
+
+class StarsTopUpStates(StatesGroup):
+    waiting_amount = State()
+
+
+class ClanStates(StatesGroup):
+    creating_name = State()
+    creating_description = State()
+    creating_privacy = State()
+    inviting_username = State()
+    setrole_username = State()
+    setrole_role = State()
+
 # ================ ЯЗЫКОВЫЕ НАСТРОЙКИ ================
 class Language(Enum):
     RU = "ru"
@@ -187,15 +424,40 @@ TRANSLATIONS = {
         "main_menu": "⚽ Футбольный Коллекционер",
         "packs": "📦 Паки",
         "collection": "📚 Коллекция",
-        "mini_game": "🎲 Казино",
+        "mini_game": "🎲 Мини Игры",
         "settings": "⚙️ Настройки",
-        "rating": "🏆 Рейтинг",
-        "rating_players": "🏅 Рейтинг игроков",
-        "rating_clans": "🏆 Рейтинг кланов",
         "profile": "👤 Профиль",
         "battle_mode": "⚔️ Режим сражения",
         "coins": "💰 Монеты",
         "gems": "💎 Алмазы",
+        "candies": "🍬 Конфеты",
+        "stars": "⭐ Stars",
+        "stars_balance": "⭐ Баланс Stars",
+        "stars_shop": "⭐ Магазин Stars",
+        "topup_stars": "➕ Пополнить Stars",
+        "buy_diamonds_stars": "💎 Купить алмазы за Stars",
+        "stars_topup_title": "⭐ Пополнение Stars",
+        "stars_spend_title": "💎 Алмазы за Stars",
+        "packs_opened_total": "📦 Открыто паков",
+        "elo": "🏆 Elo",
+        "candy_shop": "🍬 Конфетная лавка",
+        "candy_shop_title": "🍬 Конфетная лавка",
+        "clans": "🏟️ Кланы",
+        "clans_title": "🏟️ Кланы",
+        "rating": "🏆 Рейтинг",
+        "rating_title": "🏆 Рейтинг",
+        "rating_players": "🏅 Рейтинг игроков",
+        "rating_clans": "🏆 Рейтинг кланов",
+        "create_clan": "➕ Создать клан (100💎)",
+        "join_open_clan": "🔎 Вступить в открытый",
+        "clan_rating": "📋 Рейтинг кланов",
+        "clan_invites": "📨 Приглашения",
+        "clan_leave": "🚪 Покинуть клан",
+        "clan_invite_member": "➕ Пригласить",
+        "clan_set_role": "🎭 Выдать роль",
+        "buy_candy_random": "🍬 Купить конфетную карточку",
+        "candy_random_desc": "Особая карточка Конфетной редкости. Покупается за 🍬 конфеты!",
+        "not_enough_candies": "❌ Недостаточно конфет!",
         "free_packs": "🎁 Бесплатные паки",
         "basic_pack": "📦 Обычный пак",
         "premium_pack": "💎 Премиум пак",
@@ -237,11 +499,13 @@ TRANSLATIONS = {
         "card_not_found": "❌ Карточка не найдена",
         "close": "❌ Закрыть",
         "fuse": "Сплавить",
+        "sort_all": "Все",
         "sort_common": "Обычные",
         "sort_rare": "Редкие",
         "sort_epic": "Эпические",
         "sort_legendary": "Легендарные",
         "sort_mythic": "Мифические",
+        "sort_candy": "Конфетные",
         "wins": "Победы",
         "losses": "Поражения",
         "total_games": "Всего игр",
@@ -261,9 +525,15 @@ TRANSLATIONS = {
         "dice_lose": "😔 ПРОИГРЫШ! -100 монет!",
         "dice_cost": "Стоимость: 100 монет",
         "not_enough_coins_dice": "❌ У вас недостаточно монет для игры!",
-        "play_casino": "🎲 Сыграть в казино",
+        "play_casino": "🎮 Мини-игры",
+        "mg_volleyball": "🏐 Влейбол-кольцо",
+        "mg_darts": "🎯 Дартс",
+        "mg_bowling": "🎳 Боулинг",
+        "mg_anim": "✨ Играем...",
+        "mg_result": "{title}\n{detail}\n\n💰 Награда: +{coins} монет",
+
         "dice_rules": "Правила игры:\n🎲 Кубик 1-6\n💎 4,5,6 → +500 монет, +10 алмазов\n💔 1,2,3 → -100 монет",
-        "back_to_casino": "◀️ Назад в казино",
+        "back_to_casino": "◀️ Назад в мини-игры",
         "battle_mode": "⚔️ Режим сражения",
         "battle_vs_player": "👤 Против игрока",
         "battle_vs_ai": "🤖 Против ИИ",
@@ -294,13 +564,34 @@ TRANSLATIONS = {
         "collection": "📚 Collection",
         "mini_game": "🎲 Casino",
         "settings": "⚙️ Settings",
-        "rating": "🏆 Рейтинг",
-        "rating_players": "🏅 Рейтинг игроков",
-        "rating_clans": "🏆 Рейтинг кланов",
         "profile": "👤 Profile",
         "battle_mode": "⚔️ Battle mode",
         "coins": "💰 Coins",
         "gems": "💎 Gems",
+        "candies": "🍬 Candies",
+        "stars": "⭐ Stars",
+        "stars_balance": "⭐ Stars balance",
+        "stars_shop": "⭐ Stars shop",
+        "topup_stars": "➕ Top up Stars",
+        "buy_diamonds_stars": "💎 Buy diamonds with Stars",
+        "stars_topup_title": "⭐ Stars top-up",
+        "stars_spend_title": "💎 Diamonds for Stars",
+        "packs_opened_total": "📦 Packs opened",
+        "elo": "🏆 Elo",
+        "candy_shop": "🍬 Candy Shop",
+        "candy_shop_title": "🍬 Candy Shop",
+        "clans": "🏟️ Clans",
+        "clans_title": "🏟️ Clans",
+        "create_clan": "➕ Create clan (100💎)",
+        "join_open_clan": "🔎 Join open",
+        "clan_rating": "📋 Clan рейтинги",
+        "clan_invites": "📨 Invites",
+        "clan_leave": "🚪 Leave clan",
+        "clan_invite_member": "➕ Invite",
+        "clan_set_role": "🎭 Set role",
+        "buy_candy_random": "🍬 Buy candy-rarity card",
+        "candy_random_desc": "A special Candy-rarity card. Purchased with 🍬 candies!",
+        "not_enough_candies": "❌ Not enough candies!",
         "free_packs": "🎁 Free packs",
         "basic_pack": "📦 Basic Pack",
         "premium_pack": "💎 Premium Pack",
@@ -342,11 +633,13 @@ TRANSLATIONS = {
         "card_not_found": "❌ Card not found",
         "close": "❌ Close",
         "fuse": "Fuse",
+        "sort_all": "All",
         "sort_common": "Common",
         "sort_rare": "Rare",
         "sort_epic": "Epic",
         "sort_legendary": "Legendary",
         "sort_mythic": "Mythic",
+        "sort_candy": "Candy",
         "wins": "Wins",
         "losses": "Losses",
         "total_games": "Total games",
@@ -366,9 +659,15 @@ TRANSLATIONS = {
         "dice_lose": "😔 LOSE! -100 coins!",
         "dice_cost": "Cost: 100 coins",
         "not_enough_coins_dice": "❌ You don't have enough coins to play!",
-        "play_casino": "🎲 Play casino",
+        "play_casino": "🎮 Mini-games",
+        "mg_volleyball": "🏐 Volleyball hoop",
+        "mg_darts": "🎯 Darts",
+        "mg_bowling": "🎳 Bowling",
+        "mg_anim": "✨ Playing...",
+        "mg_result": "{title}\n{detail}\n\n💰 Reward: +{coins} coins",
+
         "dice_rules": "Game rules:\n🎲 Dice 1-6\n💎 4,5,6 → +500 coins, +10 gems\n💔 1,2,3 → -100 coins",
-        "back_to_casino": "◀️ Back to casino",
+        "back_to_casino": "◀️ Back to mini-games",
         "battle_mode": "⚔️ Battle mode",
         "battle_vs_player": "👤 vs Player",
         "battle_vs_ai": "🤖 vs AI",
@@ -410,13 +709,55 @@ PACK_PROBABILITIES = {
         "legendary": 13,
         "mythic": 2
     }
+,
+    "ultra": {
+        "legendary": 90,
+        "mythic": 10
+    }
+}
+
+
+# ======= Stars (внутренний баланс) и покупка алмазов =======
+STARS_TOPUP_OPTIONS = [250, 450, 800]  # сколько ⭐ пополнить (столько же списывает Telegram Stars)
+DIAMONDS_FOR_STARS = {
+    "d500": {"diamonds": 500, "cost_stars": 250},
+    "d1000": {"diamonds": 1000, "cost_stars": 450},
+    "d2500": {"diamonds": 2500, "cost_stars": 800},
 }
 
 PACK_PRICES = {
     "basic": {"coins": 100, "gems": 0},
     "premium": {"coins": 0, "gems": 50},
-    "free": {"coins": 0, "gems": 0}
+    "free": {"coins": 0, "gems": 0},
+    "ultra": {"coins": 0, "gems": 500}
 }
+
+# ================ КОНФЕТНАЯ ЛАВКА ================
+CANDY_SHOP_PRICE_RANDOM = 50
+
+def get_candy_pool() -> List[dict]:
+    """Карточки 'Конфетной' редкости берутся из characters.json (rarity == 'candy')."""
+    pool = [c for c in FOOTBALL_PLAYERS if normalize_rarity(c.get('rarity')) == 'candy']
+    if pool:
+        return pool
+    # Фолбэк, если в базе ещё нет конфетных карточек
+    return [{
+        "id": 9999,
+        "name_ru": "Сладкий Джокер",
+        "name_en": "Sweet Joker",
+        "rarity": "candy",
+        "rarity_name_ru": "Конфетная",
+        "rarity_name_en": "Candy",
+        "country_ru": "🍬",
+        "country_en": "🍬",
+        "position_ru": "Игрок",
+        "position_en": "Player",
+        "ovr": 88,
+        "description_ru": "Лимитированная конфетная карточка — появляется, если база ещё не обновлена.",
+        "description_en": "Limited candy card — appears if the database isn't updated yet.",
+        "image": None,
+    }]
+
 
 # ================ КЛАССЫ ДЛЯ УПРАВЛЕНИЯ ДАННЫМИ ================
 class UserData:
@@ -425,6 +766,8 @@ class UserData:
         self.username = username
         self.coins = 1000
         self.gems = 0
+        self.candies = 0
+        self.stars_balance = 0  # ⭐ внутренний баланс Stars
         self.collection = []
         self.language = Language.RU
         self.card_id_counter = 1
@@ -434,12 +777,17 @@ class UserData:
         self.dice_losses = 0
         self.dice_total = 0
 
+        self.elo = 1000
+        self.packs_opened_total = 0
+        self.clan_id = None
     def to_dict(self):
         return {
             "user_id": self.user_id,
             "username": self.username,
             "coins": self.coins,
             "gems": self.gems,
+            "candies": self.candies,
+            "stars_balance": self.stars_balance,
             "collection": self.collection,
             "language": self.language.value,
             "card_id_counter": self.card_id_counter,
@@ -447,8 +795,10 @@ class UserData:
             "last_free_pack_time": self.last_free_pack_time.isoformat() if self.last_free_pack_time else None,
             "dice_wins": self.dice_wins,
             "dice_losses": self.dice_losses,
-            "dice_total": self.dice_total
-        }
+            "dice_total": self.dice_total,
+            "elo": self.elo,
+            "packs_opened_total": self.packs_opened_total,
+            "clan_id": self.clan_id}
 
     @classmethod
     def from_dict(cls, data):
@@ -456,6 +806,8 @@ class UserData:
         user.username = data.get("username")
         user.coins = data.get("coins", 1000)
         user.gems = data.get("gems", 0)
+        user.candies = data.get("candies", 0)
+        user.stars_balance = data.get("stars_balance", 0)
         user.collection = data.get("collection", [])
         lang_value = data.get("language", "ru")
         user.language = Language.RU if lang_value == "ru" else Language.EN
@@ -472,6 +824,9 @@ class UserData:
         user.dice_wins = data.get("dice_wins", 0)
         user.dice_losses = data.get("dice_losses", 0)
         user.dice_total = data.get("dice_total", 0)
+        user.elo = data.get("elo", 1000)
+        user.packs_opened_total = data.get("packs_opened_total", 0)
+        user.clan_id = data.get("clan_id")
         return user
 
     def check_free_packs_refresh(self):
@@ -526,12 +881,118 @@ class UserManager:
             except Exception as e:
                 print(f"Ошибка загрузки данных: {e}")
 
+
+# ================ КЛАНЫ ================
+class ClanData:
+    def __init__(self, clan_id: str, name: str, description: str, is_open: bool, owner_id: int):
+        self.clan_id = clan_id
+        self.name = name
+        self.description = description
+        self.is_open = is_open
+        self.owner_id = owner_id
+        # members: user_id -> role ("owner"|"coach"|"player")
+        self.members = {str(owner_id): "owner"}
+        # invites by username (lowercase, without @)
+        self.invites = []
+
+    def to_dict(self):
+        return {
+            "clan_id": self.clan_id,
+            "name": self.name,
+            "description": self.description,
+            "is_open": self.is_open,
+            "owner_id": self.owner_id,
+            "members": self.members,
+            "invites": self.invites,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        clan = cls(
+            clan_id=data["clan_id"],
+            name=data.get("name", "Clan"),
+            description=data.get("description", ""),
+            is_open=bool(data.get("is_open", True)),
+            owner_id=int(data.get("owner_id", 0)),
+        )
+        clan.members = data.get("members", {}) or {}
+        clan.invites = data.get("invites", []) or []
+        # ensure owner role
+        if str(clan.owner_id) in clan.members:
+            clan.members[str(clan.owner_id)] = "owner"
+        return clan
+
+
+class ClanManager:
+    def __init__(self):
+        self.clans = {}  # clan_id -> ClanData
+        self.data_file = "clans_data.json"
+        self.load_data()
+
+    def load_data(self):
+        if not os.path.exists(self.data_file):
+            return
+        try:
+            with open(self.data_file, "r", encoding="utf-8") as f:
+                raw = json.load(f) or {}
+            for cid, cdata in raw.items():
+                try:
+                    self.clans[cid] = ClanData.from_dict(cdata)
+                except Exception as e:
+                    print(f"Ошибка загрузки клана {cid}: {e}")
+        except Exception as e:
+            print(f"Ошибка загрузки clans_data.json: {e}")
+
+    def save_data(self):
+        raw = {cid: clan.to_dict() for cid, clan in self.clans.items()}
+        with open(self.data_file, "w", encoding="utf-8") as f:
+            json.dump(raw, f, ensure_ascii=False, indent=2)
+
+    def create_clan(self, name: str, description: str, is_open: bool, owner_id: int) -> ClanData:
+        clan_id = uuid.uuid4().hex[:10]
+        clan = ClanData(clan_id, name, description, is_open, owner_id)
+        self.clans[clan_id] = clan
+        self.save_data()
+        return clan
+
+    def get_clan(self, clan_id: str) -> ClanData | None:
+        return self.clans.get(clan_id)
+
+    def delete_clan_if_empty(self, clan: ClanData):
+        if len(clan.members) == 0:
+            self.clans.pop(clan.clan_id, None)
+            self.save_data()
+
+    def clan_rating(self, clan: ClanData) -> int:
+        total = 0
+        for uid_str in clan.members.keys():
+            try:
+                uid = int(uid_str)
+            except ValueError:
+                continue
+            user = user_manager.users.get(uid)
+            if user:
+                total += int(getattr(user, "elo", 0))
+        return total
+
+    def top_clans(self, limit: int = 20):
+        items = list(self.clans.values())
+        items.sort(key=lambda c: self.clan_rating(c), reverse=True)
+        return items[:limit]
+
+clan_manager = ClanManager()
+
 user_manager = UserManager()
 
-# Совместимость с хостингами на Python 3.8/3.9 (и старым кодом)
+# --- Compatibility helpers (stars/shop additions) ---
+def get_user_data(user_id: int, username: str | None = None) -> 'UserData':
+    """Wrapper to keep handler code readable."""
+    return user_manager.get_user(user_id, username=username)
+
 def save_user_data(_: Optional['UserData'] = None):
-    """Сохраняет user_data.json. Аргумент оставлен для совместимости."""
+    """Persist all user data."""
     user_manager.save_data()
+
 
 # ================ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ================
 battle_queue = []
@@ -661,25 +1122,157 @@ def format_search_results(results: List[dict], lang: Language) -> str:
 def get_main_keyboard(lang: Language):
     t = TRANSLATIONS[lang]
     builder = InlineKeyboardBuilder()
+
+    # 2 колонки для более "живого" главного меню
     builder.button(text=t["packs"], callback_data="packs")
     builder.button(text=t["collection"], callback_data="collection_start")
+
     builder.button(text=t["profile"], callback_data="profile")
-    builder.button(text=t["mini_game"], callback_data="mini_game")
+    builder.button(text=t["mini_game"], callback_data="packs")
+
     builder.button(text=t["battle_mode"], callback_data="battle_mode")
-    builder.button(text=t["rating"], callback_data="rating_menu")
+    builder.button(text=t["candy_shop"], callback_data="candy_shop")
+
+    builder.button(text=t["clans"], callback_data="clans")
+    builder.button(text="💵 Магазин $", callback_data="shop")
+
+    builder.button(text=t["rating"], callback_data="rating")
     builder.button(text=t["settings"], callback_data="settings")
-    builder.adjust(1)
+
+    builder.adjust(2, 2, 2, 2, 2)
     return builder.as_markup()
 
 
-def get_rating_menu_keyboard(lang: Language):
-    t = TRANSLATIONS[lang]
+def get_clans_menu_keyboard(user: UserData):
+    t = TRANSLATIONS[user.language]
     builder = InlineKeyboardBuilder()
-    builder.button(text=t.get("rating_players", "🏅 Рейтинг игроков"), callback_data="rating_players")
-    builder.button(text=t.get("rating_clans", "🏆 Рейтинг кланов"), callback_data="rating_clans")
-    builder.button(text=t.get("back", "⬅ Назад"), callback_data="main_menu")
+
+    if user.clan_id:
+        builder.button(text=t["clan_leave"], callback_data="clan_leave")
+        # только глава может приглашать/выдавать роли
+        clan = clan_manager.get_clan(user.clan_id)
+        if clan and clan.owner_id == user.user_id:
+            builder.button(text=t["clan_invite_member"], callback_data="clan_invite")
+            builder.button(text=t["clan_set_role"], callback_data="clan_set_role")
+        builder.button(text=t["back"], callback_data="main_menu")
+        builder.adjust(2, 2, 1)
+        return builder.as_markup()
+
+    # не в клане
+    builder.button(text=t["create_clan"], callback_data="clan_create")
+    builder.button(text=t["join_open_clan"], callback_data="clan_join_list")
+# приглашения (показываем кнопку только если есть)
+    username = (user.username or "").lstrip("@").lower()
+    has_invites = False
+    if username:
+        for clan in clan_manager.clans.values():
+            if username in [u.lower() for u in clan.invites]:
+                has_invites = True
+                break
+    if has_invites:
+        builder.button(text=t["clan_invites"], callback_data="clan_invites")
+
+    builder.button(text=t["back"], callback_data="main_menu")
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+def get_clans_join_list_keyboard(user: UserData, limit: int = 10):
+    t = TRANSLATIONS[user.language]
+    builder = InlineKeyboardBuilder()
+    shown = 0
+    for clan in clan_manager.top_clans(limit=50):
+        if not clan.is_open:
+            continue
+        if len(clan.members) >= 11:
+            continue
+        builder.button(text=f"✅ {clan.name}", callback_data=f"clan_join:{clan.clan_id}")
+        shown += 1
+        if shown >= limit:
+            break
+    builder.button(text=t["back"], callback_data="clans")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def get_clans_rating_keyboard(user: UserData):
+    t = TRANSLATIONS[user.language]
+    builder = InlineKeyboardBuilder()
+    builder.button(text=t["back"], callback_data="rating")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_rating_menu_keyboard(user: UserData):
+    t = TRANSLATIONS[user.language]
+    builder = InlineKeyboardBuilder()
+    builder.button(text=t["rating_players"], callback_data="rating_players")
+    builder.button(text=t["rating_clans"], callback_data="clans_rating")
+    builder.button(text=t["back_to_menu"], callback_data="main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_players_rating_keyboard(user: UserData):
+    t = TRANSLATIONS[user.language]
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ Назад", callback_data="rating")
+    builder.button(text=t["back_to_menu"], callback_data="main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_clan_invites_keyboard(user: UserData):
+    t = TRANSLATIONS[user.language]
+    builder = InlineKeyboardBuilder()
+    username = (user.username or "").lstrip("@").lower()
+    for clan in clan_manager.top_clans(limit=50):
+        if username and username in [u.lower() for u in clan.invites]:
+            builder.button(text=f"✅ Вступить в {clan.name}", callback_data=f"clan_accept:{clan.clan_id}")
+    builder.button(text=t["back"], callback_data="clans")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_clan_privacy_keyboard(user: UserData):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔓 Открытый", callback_data="clan_privacy_open")
+    builder.button(text="🔒 По приглашению", callback_data="clan_privacy_invite")
+    builder.button(text=TRANSLATIONS[user.language]["back"], callback_data="clans")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def get_role_select_keyboard(user: UserData):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🧑‍🏫 Тренер", callback_data="clan_role:coach")
+    builder.button(text="👤 Игрок", callback_data="clan_role:player")
+    builder.button(text=TRANSLATIONS[user.language]["back"], callback_data="clans")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def format_clan_members(clan: ClanData) -> str:
+    # роль -> эмодзи/название
+    role_map = {
+        "owner": "👑 Владелец",
+        "coach": "🧑‍🏫 Тренер",
+        "player": "👤 Игрок",
+    }
+    lines = []
+    for uid_str, role in clan.members.items():
+        try:
+            uid = int(uid_str)
+        except ValueError:
+            continue
+        user = user_manager.users.get(uid)
+        uname = None
+        if user and user.username:
+            uname = "@" + user.username.lstrip("@")
+        else:
+            uname = f"ID:{uid}"
+        lines.append(f"{uname} — {role_map.get(role, role)}")
+    return "\n".join(lines) if lines else "—"
 
 def get_profile_keyboard(lang: Language):
     t = TRANSLATIONS[lang]
@@ -699,6 +1292,12 @@ def get_packs_keyboard(lang: Language):
         text=f"{t['premium_pack']} - {PACK_PRICES['premium']['gems']} {t['gems']}",
         callback_data="buy_premium"
     )
+    builder.button(
+        text=f"🔥 Ультра‑Пак - {PACK_PRICES['ultra']['gems']} {t['gems']}",
+        callback_data="buy_ultra"
+    )
+    builder.button(text=t["free_pack"], callback_data="free_pack_menu")
+    builder.button(text=t.get("stars_shop", "⭐ Stars"), callback_data="stars_shop")
     builder.button(text=t["back"], callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -714,10 +1313,14 @@ def get_mini_game_keyboard(lang: Language):
 def get_casino_keyboard(lang: Language, show_back: bool = True):
     t = TRANSLATIONS[lang]
     builder = InlineKeyboardBuilder()
+    # Мини-игры
+    builder.button(text=t["mg_volleyball"], callback_data="mg_volleyball")
+    builder.button(text=t["mg_darts"], callback_data="mg_darts")
+    builder.button(text=t["mg_bowling"], callback_data="mg_bowling")
     builder.button(text=t["roll_dice"], callback_data="roll_dice")
     if show_back:
         builder.button(text=t["back_to_menu"], callback_data="main_menu")
-    builder.adjust(1)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 def get_dice_result_keyboard(lang: Language):
@@ -734,7 +1337,7 @@ def get_free_pack_keyboard(lang: Language, has_free_packs: bool):
     builder = InlineKeyboardBuilder()
     if has_free_packs:
         builder.button(text=t["open_free_pack"], callback_data="open_free_pack")
-    builder.button(text=t["back"], callback_data="mini_game")
+    builder.button(text=t["back"], callback_data="packs")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -753,6 +1356,14 @@ def get_settings_keyboard(lang: Language):
     builder = InlineKeyboardBuilder()
     builder.button(text=t["reset_progress"], callback_data="reset_confirm")
     builder.button(text=t["change_language"], callback_data="change_lang")
+    builder.button(text=t["back"], callback_data="main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_candy_shop_keyboard(lang: Language, price: int):
+    t = TRANSLATIONS[lang]
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"{t['buy_candy_random']} — {price} {t['candies']}", callback_data="buy_candy_random")
     builder.button(text=t["back"], callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -789,6 +1400,55 @@ def get_collection_navigation_keyboard(lang: Language, current_index: int, total
     
     return builder.as_markup()
 
+def get_collection_sections_keyboard(user: UserData):
+    t = TRANSLATIONS[user.language]
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"📚 {t['sort_all']}", callback_data="collection_section_all")
+    builder.button(text=f"🟢 {t['sort_common']}", callback_data="collection_section_common")
+    builder.button(text=f"🔵 {t['sort_rare']}", callback_data="collection_section_rare")
+    builder.button(text=f"🟣 {t['sort_epic']}", callback_data="collection_section_epic")
+    builder.button(text=f"👑 {t['sort_legendary']}", callback_data="collection_section_legendary")
+    builder.button(text=f"🤍💎 {t['sort_mythic']}", callback_data="collection_section_mythic")
+    has_candy = any(normalize_rarity(c.get("rarity")) == "candy" for c in user.collection)
+    if has_candy:
+        builder.button(text=f"🍬 {t['sort_candy']}", callback_data="collection_section_candy")
+    builder.button(text=t["back"], callback_data="main_menu")
+    builder.adjust(2, 2, 2, 1)
+    return builder.as_markup()
+
+def filter_collection_by_rarity(user: UserData, rarity: str) -> list:
+    if rarity == "all":
+        return get_sorted_collection(user.collection)
+    r = normalize_rarity(rarity)
+    return get_sorted_collection([c for c in user.collection if normalize_rarity(c.get("rarity")) == r])
+
+def get_collection_navigation_keyboard_with_section(lang: Language, section: str, current_index: int, total_cards: int):
+    t = TRANSLATIONS[lang]
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(text=t["search_card"], callback_data="search_card_start"),
+        InlineKeyboardButton(text=t["view_card"], callback_data=f"collection_view_{section}_{current_index}")
+    )
+
+    nav_row = []
+    if current_index > 0:
+        nav_row.append(InlineKeyboardButton(text="◀️", callback_data=f"collection_prev_{section}_{current_index}"))
+    nav_row.append(InlineKeyboardButton(
+        text=f"{t['card_number']} {current_index + 1}/{total_cards}",
+        callback_data="noop"
+    ))
+    if current_index < total_cards - 1:
+        nav_row.append(InlineKeyboardButton(text="▶️", callback_data=f"collection_next_{section}_{current_index}"))
+    builder.row(*nav_row)
+
+    builder.row(
+        InlineKeyboardButton(text="📂 " + (t["collection"] if lang == Language.RU else "Collection"), callback_data="collection_start"),
+        InlineKeyboardButton(text=t["back"], callback_data="main_menu")
+    )
+    builder.adjust(1, 1, 2, 1)
+    return builder.as_markup()
+
 def get_card_detail_keyboard(user: UserData, card: dict, from_collection: bool = False, from_search: str = "", current_index: int = 0):
     t = TRANSLATIONS[user.language]
     builder = InlineKeyboardBuilder()
@@ -804,7 +1464,7 @@ def get_card_detail_keyboard(user: UserData, card: dict, from_collection: bool =
         )
     
     if from_collection:
-        builder.button(text=t["close"], callback_data=f"collection_return_{current_index}")
+        builder.button(text=t["close"], callback_data=f"collection_return_{from_search if from_search else 'all'}_{current_index}")
     else:
         builder.button(text=t["close"], callback_data=f"back_to_search_{from_search}")
     
@@ -865,14 +1525,79 @@ def get_battle_result_keyboard(lang: Language):
 # ================ ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ТЕКСТА ================
 def get_text_main_menu(user: UserData) -> str:
     t = TRANSLATIONS[user.language]
-    subtitle = "Выберите раздел ниже 👇" if user.language == Language.RU else "Choose a section below 👇"
+    if user.language == Language.RU:
+        return "<b>Главное меню</b>\n⚽️Футбольный Коллекционер⚽️\n\n⭐️ Собери свою, лучшую коллекцию ⭐️"
+    subtitle = "Choose a section below 👇"
     return f"⚽ <b>{t['main_menu']}</b>\n<i>{subtitle}</i>"
+
+
+def build_packs_page_text(user: UserData) -> str:
+    """Текст страницы паков (информативно, без публичных шансов)."""
+    t = TRANSLATIONS[user.language]
+    stars = getattr(user, "stars_balance", 0)
+
+    if user.language == Language.RU:
+        return (
+            f"🧩 <b>{t['packs']}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💰 <b>Ваш баланс</b>\n"
+            f"{t['coins']}: <b>{user.coins}</b>   {t['gems']}: <b>{user.gems}</b>   ⭐ Stars: <b>{stars}</b>\n"
+            f"━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>{t['basic_pack']}</b> — 1 карточка\n"
+            f"• Цена: <b>{PACK_PRICES['basic']['coins']} {t['coins']}</b>\n"
+            f"• Хороший выбор для постоянного открытия и сплавки дубликатов.\n\n"
+            f"💎 <b>{t['premium_pack']}</b> — 1 карточка\n"
+            f"• Цена: <b>{PACK_PRICES['premium']['gems']} {t['gems']}</b>\n"
+            f"• Шансы на высокие редкости здесь заметно повышены.\n\n"
+            f"🔥 <b>Ультра‑Пак</b> — 1 карточка\n"
+            f"• Цена: <b>{PACK_PRICES['ultra']['gems']} {t['gems']}</b>\n"
+            f"• Гарант: <b>Легендарная</b> или <b>Мифическая</b> (внутри шанс повышен).\n\n"
+            f"♻️ <b>Сплавка</b>\n"
+            f"• Сплавляйте дубликаты и получайте 🍬 конфеты.\n"
+            f"• Конфеты тратятся в 🍬 Конфетной лавке на особые карточки.\n\n"
+            f"⭐ <b>Stars</b>\n"
+            f"• Пополняйте ⭐ баланс в боте и тратьте на покупки (например, на 💎 алмазы).\n"
+        )
+    else:
+        return (
+            f"🧩 <b>{t['packs']}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💰 <b>Your balance</b>\n"
+            f"{t['coins']}: <b>{user.coins}</b>   {t['gems']}: <b>{user.gems}</b>   ⭐ Stars: <b>{stars}</b>\n"
+            f"━━━━━━━━━━━━━━\n\n"
+            f"📦 <b>{t['basic_pack']}</b> — 1 card\n"
+            f"• Price: <b>{PACK_PRICES['basic']['coins']} {t['coins']}</b>\n\n"
+            f"💎 <b>{t['premium_pack']}</b> — 1 card\n"
+            f"• Price: <b>{PACK_PRICES['premium']['gems']} {t['gems']}</b>\n"
+            f"• Better odds for high rarities.\n\n"
+            f"🔥 <b>Ultra Pack</b> — 1 card\n"
+            f"• Price: <b>{PACK_PRICES['ultra']['gems']} {t['gems']}</b>\n"
+            f"• Guaranteed <b>Legendary</b> or <b>Mythic</b>.\n\n"
+            f"♻️ <b>Fusion</b>: get 🍬 candies from duplicates.\n"
+            f"⭐ <b>Stars</b>: top up in-bot and spend on purchases.\n"
+        )
+
+def get_minigames_text(user: UserData) -> str:
+    t = TRANSLATIONS[user.language]
+    if user.language == Language.RU:
+        return (
+            f"🎮 <b>{t['mini_game']}</b>\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"Выберите мини-игру:"
+        )
+    return (
+        f"🎮 <b>{t['mini_game']}</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"Choose a mini-game:"
+    )
+
 
 def get_text_card_detail(card: dict, lang: Language):
     t = TRANSLATIONS[lang]
     rarity_emoji = {
         "common": "🟢", "rare": "🔵", "epic": "🟣",
-        "legendary": "👑", "mythic": "🤍💎"
+        "legendary": "👑", "mythic": "🤍💎",
+        "candy": "🍬"
     }
     name = card["name_ru"] if lang == Language.RU else card["name_en"]
     rarity_name = card["rarity_name_ru"] if lang == Language.RU else card["rarity_name_en"]
@@ -898,7 +1623,8 @@ def get_text_collection_card(card: dict, index: int, total: int, lang: Language)
     t = TRANSLATIONS[lang]
     rarity_emoji = {
         "common": "🟢", "rare": "🔵", "epic": "🟣",
-        "legendary": "👑", "mythic": "🤍💎"
+        "legendary": "👑", "mythic": "🤍💎",
+        "candy": "🍬"
     }
     name = card["name_ru"] if lang == Language.RU else card["name_en"]
     rarity_name = card["rarity_name_ru"] if lang == Language.RU else card["rarity_name_en"]
@@ -1003,6 +1729,8 @@ async def send_pack_opening_animation(message: Message, lang: Language):
 async def cmd_start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
+    full_name = message.from_user.full_name
+    logger.info(f"[USER JOIN] @{username} | {full_name} | id={user_id}")
     user = user_manager.get_user(user_id, username)
     
     bg_path = os.path.join(IMAGES_PATH, BACKGROUND_IMAGE_FILENAME)
@@ -1031,6 +1759,7 @@ async def cmd_reset(message: Message):
     
     user.coins = 1000
     user.gems = 0
+    user.candies = 0
     user.collection = []
     user.card_id_counter = 1
     user.free_packs = 5
@@ -1043,6 +1772,119 @@ async def cmd_reset(message: Message):
     await message.answer(t["progress_reset"])
 
 # ================ ОБРАБОТЧИКИ КОЛЛБЭКОВ ================
+
+
+# =============== КОМАНДЫ (Меню рядом с текстовой строкой) ===============
+@dp.message(Command("help"))
+async def cmd_help(message: Message):
+    text = (
+        "<b>Команды бота</b>\n"
+        "/start — открыть главное меню\n"
+        "/menu — главное меню\n"
+        "/profile — профиль\n"
+        "/packs — пакеты\n"
+        "/minigames — мини-игры\n"
+        "/clans — кланы\n"
+        "/settings — настройки\n"
+        "/help — список команд"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def _send_main_menu(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    caption = get_text_main_menu(user)
+    await send_page(
+        message,
+        image_basename="backgrauond",  # ваш фон главного меню
+        text=caption,
+        reply_markup=get_main_keyboard(user.language),
+    )
+
+
+@dp.message(Command("menu"))
+async def cmd_menu(message: Message):
+    await _send_main_menu(message)
+
+
+@dp.message(Command("profile"))
+async def cmd_profile(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    caption = build_profile_text(user)
+    await send_page(
+        message,
+        image_basename="profile",
+        text=caption,
+        reply_markup=get_profile_keyboard(user.language),
+    )
+
+
+@dp.message(Command("packs"))
+async def cmd_packs(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    await message.answer(
+        build_packs_page_text(user),
+        reply_markup=get_packs_keyboard(user.language),
+        parse_mode="HTML",
+    )
+
+
+@dp.message(Command("minigames"))
+async def cmd_minigames(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    await send_page(
+        message,
+        image_basename="minigames",
+        text=get_minigames_text(user),
+        reply_markup=get_mini_game_keyboard(user.language),
+    )
+
+
+@dp.message(Command("settings"))
+async def cmd_settings(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    lang = user.language
+    t = TRANSLATIONS[lang]
+    text = (
+        f"⚙️ <b>{t['settings']}</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"{t['choose_lang']}"
+    )
+    await send_page(
+        message,
+        image_basename="settings",
+        text=text,
+        reply_markup=get_settings_keyboard(lang),
+    )
+
+@dp.message(Command("clans"))
+async def cmd_clans(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    user = user_manager.get_user(user_id, username)
+    text = build_clans_page_text(user)
+    await send_page(
+        message,
+        image_basename="clans",
+        text=text,
+        reply_markup=get_clans_menu_keyboard(user),
+    )
+
 @dp.callback_query(F.data == "main_menu")
 async def callback_main_menu(callback: CallbackQuery):
     try:
@@ -1079,112 +1921,48 @@ async def callback_profile(callback: CallbackQuery):
         await callback.answer()
     except TelegramBadRequest:
         return
+
+    user_id = callback.from_user.id
+    username = callback.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    caption = build_profile_text(user)
+
+    # фон профиля
+    bg_path = get_existing_image_path("profile")
+    if bg_path:
+        # Надёжнее слать новое сообщение, чтобы не ловить ограничения edit_text/edit_caption
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.message.answer_photo(
+            photo=FSInputFile(bg_path),
+            caption=caption,
+            reply_markup=get_profile_keyboard(user.language),
+            parse_mode="HTML",
+        )
+    else:
+        await safe_edit_or_send(callback.message, caption, reply_markup=get_profile_keyboard(user.language))
+
+@dp.callback_query(F.data == "packs")
+async def callback_packs(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
     t = TRANSLATIONS[user.language]
-    
-    total = len(user.collection)
-    common = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "common"])
-    rare = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "rare"])
-    epic = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "epic"])
-    legendary = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "legendary"])
-    mythic = len([c for c in user.collection if normalize_rarity(c.get("rarity")) == "mythic"])
-    user.check_free_packs_refresh()
-    
-    display_name = get_user_display_name(user)
-    
-    if user.language == Language.RU:
-        title = f"👤 <b>Ваш профиль</b> {display_name}"
-        balance = "Баланс"
-        stats = "Статистика"
-        casino = "Казино"
+    text = build_packs_page_text(user)
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=get_packs_keyboard(user.language), parse_mode="HTML")
     else:
-        title = f"👤 <b>Your profile</b> {display_name}"
-        balance = "Balance"
-        stats = "Stats"
-        casino = "Casino"
-    
-    text = (
-        f"{title}\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"💰 <b>{balance}</b>\n"
-        f"{t['coins']}: <b>{user.coins}</b> 🪙\n"
-        f"{t['gems']}: <b>{user.gems}</b> 💎\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"📊 <b>{stats}</b>\n"
-        f"📚 {t['collection']}: <b>{total}</b>\n"
-        f"🟢 {t['sort_common']}: <b>{common}</b>\n"
-        f"🔵 {t['sort_rare']}: <b>{rare}</b>\n"
-        f"🟣 {t['sort_epic']}: <b>{epic}</b>\n"
-        f"👑 {t['sort_legendary']}: <b>{legendary}</b>\n"
-        f"🤍💎 {t['sort_mythic']}: <b>{mythic}</b>\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"🎁 {t['free_packs']}: <b>{user.free_packs}</b>/5\n"
-        f"━━━━━━━━━━━━━━\n"
-        f"🎲 <b>{casino}</b>\n"
-        f"✅ {t['wins']}: <b>{user.dice_wins}</b>\n"
-        f"❌ {t['losses']}: <b>{user.dice_losses}</b>\n"
-        f"📌 {t['total_games']}: <b>{user.dice_total}</b>"
-    )
-    
-    try:
-        if callback.message.photo:
-            await callback.message.delete()
-            await callback.message.answer(text, reply_markup=get_profile_keyboard(user.language), parse_mode="HTML")
-        else:
-            await callback.message.edit_text(text, reply_markup=get_profile_keyboard(user.language), parse_mode="HTML")
-    except TelegramBadRequest:
-        await callback.message.answer(text, reply_markup=get_profile_keyboard(user.language), parse_mode="HTML")
+        try:
+            await callback.message.edit_text(text, reply_markup=get_packs_keyboard(user.language), parse_mode="HTML")
+        except TelegramBadRequest:
+            await callback.message.answer(text, reply_markup=get_packs_keyboard(user.language), parse_mode="HTML")
+    await callback.answer()
 
-@dp.callback_query(F.data == "packs")
-async def callback_packs(callback: CallbackQuery):
-    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
-    t = TRANSLATIONS[user.language]
-    caption = (
-        f"📦 <b>{t['packs']}</b>\n\n"
-        + (f"💰 {t['coins']}: <b>{user.coins}</b>   {t['gems']}: <b>{user.gems}</b>\n\n"
-           if user.language == Language.RU else f"💰 {t['coins']}: <b>{user.coins}</b>   {t['gems']}: <b>{user.gems}</b>\n\n")
-        + ("Выберите пак ниже 👇" if user.language == Language.RU else "Choose a pack below 👇")
-    )
-    await show_page_with_bg(callback.message, "packs.png", caption, reply_markup=get_packs_keyboard(user.language))
-@dp.callback_query(F.data == "rating_menu")
-async def callback_rating_menu(callback: CallbackQuery):
-    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
-    t = TRANSLATIONS[user.language]
-    caption = f"🏆 <b>{t['rating']}</b>\n\nВыберите раздел 👇" if user.language == Language.RU else f"🏆 <b>{t['rating']}</b>\n\nChoose a section 👇"
-    await show_page_with_bg(callback.message, "rating.png", caption, reply_markup=get_rating_menu_keyboard(user.language))
-
-@dp.callback_query(F.data == "rating_players")
-async def callback_rating_players(callback: CallbackQuery):
-    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
-    t = TRANSLATIONS[user.language]
-    # топ-20 по Elo
-    users_sorted = sorted(user_manager.users.values(), key=lambda u: getattr(u, "elo", 0), reverse=True)
-    top = users_sorted[:20]
-    lines = []
-    for i, u in enumerate(top, 1):
-        uname = f"@{u.username}" if getattr(u, "username", None) else str(u.user_id)
-        lines.append(f"{i}. {uname} — <b>{getattr(u, 'elo', 0)}</b>")
-    body = "\n".join(lines) if lines else ("Пока нет игроков." if user.language == Language.RU else "No players yet.")
-    caption = f"🏅 <b>{t['rating_players']}</b>\n\n{body}"
-    kb = InlineKeyboardBuilder()
-    kb.button(text=t["back"], callback_data="rating_menu")
-    kb.adjust(1)
-    await show_page_with_bg(callback.message, "rating.png", caption, reply_markup=kb.as_markup())
-
-@dp.callback_query(F.data == "rating_clans")
-async def callback_rating_clans(callback: CallbackQuery):
-    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
-    t = TRANSLATIONS[user.language]
-    # Если кланов нет в этой версии — показываем заглушку
-    caption = f"🏆 <b>{t['rating_clans']}</b>\n\nСистема кланов в этой версии бота не подключена." if user.language == Language.RU else f"🏆 <b>{t['rating_clans']}</b>\n\nClans are not enabled in this bot version."
-    kb = InlineKeyboardBuilder()
-    kb.button(text=t["back"], callback_data="rating_menu")
-    kb.adjust(1)
-    await show_page_with_bg(callback.message, "rating.png", caption, reply_markup=kb.as_markup())
-
-@dp.callback_query(F.data.startswith("buy_"))
+@dp.callback_query(F.data.in_(["buy_basic", "buy_premium", "buy_free", "buy_ultra"]))
 async def callback_buy_pack(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
@@ -1196,20 +1974,27 @@ async def callback_buy_pack(callback: CallbackQuery):
     except TelegramBadRequest:
         return
     
-    pack_type = callback.data.split("_")[1]
-    price = PACK_PRICES[pack_type]
-    
-    if pack_type == "basic" and user.coins < price["coins"]:
+    pack_type = callback.data.split("_", 1)[1]
+    price = PACK_PRICES.get(pack_type)
+    if not price:
+        await callback.answer("Неизвестный пак.", show_alert=True)
+        return
+
+    # Универсальная проверка валют
+    need_coins = int(price.get("coins", 0) or 0)
+    need_gems = int(price.get("gems", 0) or 0)
+
+    if need_coins and user.coins < need_coins:
         await callback.answer(t["not_enough_coins"], show_alert=True)
         return
-    elif pack_type == "premium" and user.gems < price["gems"]:
+    if need_gems and user.gems < need_gems:
         await callback.answer(t["not_enough_gems"], show_alert=True)
         return
-    
-    if pack_type == "basic":
-        user.coins -= price["coins"]
-    else:
-        user.gems -= price["gems"]
+
+    if need_coins:
+        user.coins -= need_coins
+    if need_gems:
+        user.gems -= need_gems
     
     status_msg = await send_pack_opening_animation(callback.message, user.language)
     card = get_random_card(pack_type)
@@ -1250,21 +2035,16 @@ async def callback_mini_game(callback: CallbackQuery):
     t = TRANSLATIONS[user.language]
 
     text = (
-        f"🎮 <b>{t['mini_game']}</b>\\n"
-        f"━━━━━━━━━━━━━━\\n"
-        f"1️⃣ {t['play_casino']}\\n"
-        f"━━━━━━━━━━━━━━\\n"
-        f"{t.get('choose_game', 'Выберите игру:')}"
+        f"🎮 <b>{t['mini_game']}</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"Выберите мини-игру:"
     )
-
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=get_mini_game_keyboard(user.language), parse_mode="HTML")
-    else:
-        try:
-            await callback.message.edit_text(text, reply_markup=get_mini_game_keyboard(user.language), parse_mode="HTML")
-        except TelegramBadRequest:
-            await callback.message.answer(text, reply_markup=get_mini_game_keyboard(user.language), parse_mode="HTML")
+    await render_page(
+        callback,
+        image_basename="minigames",
+        text=text,
+        reply_markup=get_mini_game_keyboard(user.language),
+    )
     await callback.answer()
 
 @dp.callback_query(F.data == "play_casino")
@@ -1272,17 +2052,14 @@ async def callback_play_casino(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
-    
-    text = get_text_casino(user)
 
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=get_casino_keyboard(user.language, show_back=True), parse_mode="HTML")
-    else:
-        try:
-            await callback.message.edit_text(text, reply_markup=get_casino_keyboard(user.language, show_back=True), parse_mode="HTML")
-        except TelegramBadRequest:
-            await callback.message.answer(text, reply_markup=get_casino_keyboard(user.language, show_back=True), parse_mode="HTML")
+    text = get_text_casino(user)
+    await render_page(
+        callback,
+        image_basename="minigames",
+        text=text,
+        reply_markup=get_casino_keyboard(user.language, show_back=True),
+    )
     await callback.answer()
 
 @dp.callback_query(F.data == "roll_dice")
@@ -1349,6 +2126,107 @@ async def callback_free_pack_menu(callback: CallbackQuery):
     )
     await callback.answer()
 
+
+@dp.callback_query(F.data.in_({"mg_volleyball", "mg_darts", "mg_bowling"}))
+async def callback_minigame_play(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    username = callback.from_user.username
+    user = user_manager.get_user(user_id, username)
+    t = TRANSLATIONS[user.language]
+
+    game = callback.data
+
+    # показываем анимированный стикер (и удаляем через 5 секунд после результата)
+    sticker_file_id = (
+        MINIGAME_STICKER_BASKETBALL_FILE_ID if game == "mg_volleyball" else
+        MINIGAME_STICKER_DARTS_FILE_ID if game == "mg_darts" else
+        MINIGAME_STICKER_BOWLING_FILE_ID
+    )
+    sticker_msg = await send_minigame_sticker(
+        callback.message.chat.id,
+        file_id=sticker_file_id,
+        reply_to_message_id=callback.message.message_id,
+    )
+
+    # рассчитываем результат и награду
+    if game == "mg_volleyball":
+        title = t["mg_volleyball"]
+        # 0-3 попаданий
+        hits = random.choices([0, 1, 2, 3], weights=[40, 35, 18, 7], k=1)[0]
+        if hits == 0:
+            coins = 0
+            detail = "❌ Мимо кольца!" if user.language == Language.RU else "❌ Miss!"
+        elif hits == 1:
+            coins = 50
+            detail = "✅ Точное попадание!" if user.language == Language.RU else "✅ Nice hit!"
+        elif hits == 2:
+            coins = 120
+            detail = "🔥 Двойной успех!" if user.language == Language.RU else "🔥 Double hit!"
+        else:
+            coins = 250
+            detail = "🏆 ИДЕАЛЬНО! Три подряд!" if user.language == Language.RU else "🏆 PERFECT! Three in a row!"
+    elif game == "mg_darts":
+        title = t["mg_darts"]
+        # 0-100 очков
+        score = random.choices(
+            [0, 10, 25, 50, 100],
+            weights=[20, 30, 25, 18, 7],
+            k=1
+        )[0]
+        if score == 0:
+            coins = 0
+            detail = "😵 Промах..." if user.language == Language.RU else "😵 Miss..."
+        elif score == 10:
+            coins = 40
+            detail = "🎯 Внешнее кольцо (10)" if user.language == Language.RU else "🎯 Outer ring (10)"
+        elif score == 25:
+            coins = 90
+            detail = "🎯 Среднее кольцо (25)" if user.language == Language.RU else "🎯 Middle ring (25)"
+        elif score == 50:
+            coins = 160
+            detail = "🎯 Почти центр! (50)" if user.language == Language.RU else "🎯 Near center! (50)"
+        else:
+            coins = 300
+            detail = "🎯 БУЛЛЗАЙ! (100)" if user.language == Language.RU else "🎯 BULLSEYE! (100)"
+    else:  # mg_bowling
+        title = t["mg_bowling"]
+        pins = random.choices(list(range(0, 11)), weights=[6,6,6,7,7,8,9,10,12,14,15], k=1)[0]
+        if pins == 10:
+            coins = 320
+            detail = "🎳 СТРАЙК! (10/10)" if user.language == Language.RU else "🎳 STRIKE! (10/10)"
+        elif pins >= 7:
+            coins = 180
+            detail = f"🎳 Отлично! Сбито кегель: {pins}/10" if user.language == Language.RU else f"🎳 Great! Pins: {pins}/10"
+        elif pins >= 4:
+            coins = 90
+            detail = f"🎳 Неплохо. Сбито кегель: {pins}/10" if user.language == Language.RU else f"🎳 Not bad. Pins: {pins}/10"
+        elif pins >= 1:
+            coins = 30
+            detail = f"🎳 Слабо. Сбито кегель: {pins}/10" if user.language == Language.RU else f"🎳 Weak. Pins: {pins}/10"
+        else:
+            coins = 0
+            detail = "😬 Гаттер! (0/10)" if user.language == Language.RU else "😬 Gutter! (0/10)"
+
+    # выдаём награду
+    if coins > 0:
+        user.coins += coins
+        user_manager.save_user(user)
+
+    # показываем результат (обновляем ту же страницу мини-игр)
+    result_text = t["mg_result"].format(title=title, detail=detail, coins=coins)
+    await render_page(
+        callback,
+        image_basename="minigames",
+        text=result_text,
+        reply_markup=get_casino_keyboard(user.language, show_back=True),
+        force_new_message=True,
+    )
+    await callback.answer()
+
+    # удаляем стикер через 5 секунд после показа результата
+    await delete_message_safely(sticker_msg, delay=5)
+
+
 @dp.callback_query(F.data == "open_free_pack")
 async def callback_open_free_pack(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -1374,6 +2252,7 @@ async def callback_open_free_pack(callback: CallbackQuery):
     user.card_id_counter += 1
     user.collection.append(card)
     user.free_packs -= 1
+    user.packs_opened_total = user.packs_opened_total + 1
     user_manager.save_user(user)
     
     caption = build_drop_caption(card, user.language, CARD_LIFETIME_SECONDS)
@@ -1429,17 +2308,113 @@ async def callback_settings(callback: CallbackQuery):
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
     t = TRANSLATIONS[user.language]
-    
+
     text = f"⚙️ <b>{t['settings']}</b>"
-    if callback.message.photo:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=get_settings_keyboard(user.language), parse_mode="HTML")
-    else:
-        try:
-            await callback.message.edit_text(text, reply_markup=get_settings_keyboard(user.language), parse_mode="HTML")
-        except TelegramBadRequest:
-            await callback.message.answer(text, reply_markup=get_settings_keyboard(user.language), parse_mode="HTML")
+    await render_page(
+        callback,
+        image_basename="settings",
+        text=text,
+        reply_markup=get_settings_keyboard(user.language),
+    )
     await callback.answer()
+
+
+# ================ КОНФЕТНАЯ ЛАВКА ================
+@dp.callback_query(F.data == "candy_shop")
+async def callback_candy_shop(callback: CallbackQuery):
+    try:
+        await callback.answer()
+    except TelegramBadRequest:
+        return
+
+    user_id = callback.from_user.id
+    username = callback.from_user.username
+    user = user_manager.get_user(user_id, username)
+    t = TRANSLATIONS[user.language]
+
+    text = (
+        f"🍬 <b>{t['candy_shop_title']}</b>\n"
+        f"{t['candies']}: <b>{user.candies}</b> 🍬\n\n"
+        f"{t['candy_random_desc']}\n"
+        f"Цена: <b>{CANDY_SHOP_PRICE_RANDOM}</b> 🍬"
+    )
+    kb = get_candy_shop_keyboard(user.language, CANDY_SHOP_PRICE_RANDOM)
+
+    await render_page(
+        callback,
+        image_basename="candy_shop",
+        text=text,
+        reply_markup=kb,
+    )
+
+
+@dp.callback_query(F.data == "buy_candy_random")
+async def callback_buy_candy_random(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    username = callback.from_user.username
+    user = user_manager.get_user(user_id, username)
+    t = TRANSLATIONS[user.language]
+
+    try:
+        await callback.answer("🍬 Покупка…")
+    except TelegramBadRequest:
+        return
+
+    price = CANDY_SHOP_PRICE_RANDOM
+    if user.candies < price:
+        await callback.answer(t["not_enough_candies"], show_alert=True)
+        return
+
+    user.candies -= price
+
+    pool = get_candy_pool()
+    chosen = random.choice(pool).copy()
+
+    chosen["acquired_date"] = datetime.now().strftime("%d.%m.%Y")
+    chosen["user_card_id"] = user.card_id_counter
+    user.card_id_counter += 1
+    user.collection.append(chosen)
+    user_manager.save_user(user)
+
+    msg_text = (
+        f"✅ <b>Покупка успешна!</b>\n"
+        f"-{price} 🍬\n"
+        f"Теперь у тебя: <b>{user.candies}</b> 🍬\n\n"
+        f"{get_text_card_detail(chosen, user.language)}"
+    )
+
+    media = get_card_media(chosen)
+    card_msg = None
+    if media:
+        card_msg = await callback.message.answer_photo(media, caption=msg_text, parse_mode="HTML")
+        await save_tg_file_id(chosen, card_msg)
+    else:
+        card_msg = await callback.message.answer(msg_text, parse_mode="HTML")
+
+
+    # Обновляем текст лавки
+    shop_text = (
+        f"🍬 <b>{t['candy_shop_title']}</b>\n"
+        f"{t['candies']}: <b>{user.candies}</b> 🍬\n\n"
+        f"{t['candy_random_desc']}\n"
+        f"Цена: <b>{CANDY_SHOP_PRICE_RANDOM}</b> 🍬"
+    )
+    kb = get_candy_shop_keyboard(user.language, CANDY_SHOP_PRICE_RANDOM)
+
+    await render_page(
+        callback,
+        image_basename="candy_shop",
+        text=shop_text,
+        reply_markup=kb,
+    )
+
+    # Удаляем карточку через 5 секунд (как и в паках)
+    await asyncio.sleep(CARD_LIFETIME_SECONDS)
+    try:
+        if card_msg:
+            await card_msg.delete()
+    except Exception:
+        pass
 
 @dp.callback_query(F.data == "reset_confirm")
 async def callback_reset_confirm(callback: CallbackQuery):
@@ -1467,6 +2442,7 @@ async def callback_reset_yes(callback: CallbackQuery):
     
     user.coins = 1000
     user.gems = 0
+    user.candies = 0
     user.collection = []
     user.card_id_counter = 1
     user.free_packs = 5
@@ -1536,23 +2512,92 @@ async def callback_collection_start(callback: CallbackQuery):
         await callback.answer()
     except TelegramBadRequest:
         return
-    
+
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
-    
+    t = TRANSLATIONS[user.language]
+
     if not user.collection:
-        t = TRANSLATIONS[user.language]
         text = t["empty_collection"]
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text=t["back"], callback_data="main_menu")]]
         )
-        await callback.message.delete()
+        try:
+            await callback.message.delete()
+        except:
+            pass
         await callback.message.answer(text, reply_markup=keyboard)
         return
-    
-    sorted_collection = get_sorted_collection(user.collection)
-    await show_collection_card(callback.message, user, sorted_collection, 0)
+
+    text = "<b>Выберите раздел</b>" if user.language == Language.RU else "<b>Choose a section</b>"
+    kb = get_collection_sections_keyboard(user)
+
+    await render_page(callback, image_basename="collection", text=text, reply_markup=kb)
+    await callback.answer()
+    return
+
+@dp.callback_query(F.data.startswith("collection_section_"))
+async def callback_collection_section(callback: CallbackQuery):
+    try:
+        await callback.answer()
+    except TelegramBadRequest:
+        return
+
+
+    user_id = callback.from_user.id
+    username = callback.from_user.username
+    user = user_manager.get_user(user_id, username)
+
+    section = callback.data.split("_", 2)[2]  # all/common/...
+    filtered = filter_collection_by_rarity(user, section)
+
+    if not filtered:
+        t = TRANSLATIONS[user.language]
+        await callback.message.answer(
+            ("В разделе нет карточек." if user.language == Language.RU else "No cards in this section."),
+            reply_markup=get_collection_sections_keyboard(user),
+            parse_mode="HTML"
+        )
+        return
+
+    await show_collection_card_section(callback.message, user, filtered, 0, section)
+
+async def show_collection_card_section(message: Message, user: UserData, collection: list, index: int, section: str):
+    card = collection[index]
+    caption = get_text_collection_card(card, index, len(collection), user.language)
+    keyboard = get_collection_navigation_keyboard_with_section(user.language, section, index, len(collection))
+    media = get_card_media(card)
+
+    try:
+        if media:
+            if message.photo:
+                await message.edit_media(
+                    types.InputMediaPhoto(media=media, caption=caption, parse_mode="HTML"),
+                    reply_markup=keyboard
+                )
+            else:
+                try:
+                    await message.delete()
+                except:
+                    pass
+                sent = await message.answer_photo(
+                    media,
+                    caption=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                await save_tg_file_id(card, sent)
+        else:
+            if message.text:
+                await message.edit_text(caption, reply_markup=keyboard, parse_mode="HTML")
+            else:
+                await message.answer(caption, reply_markup=keyboard, parse_mode="HTML")
+    except TelegramBadRequest:
+        try:
+            await message.answer_photo(media, caption=caption, reply_markup=keyboard, parse_mode="HTML")
+        except:
+            await message.answer(caption, reply_markup=keyboard, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("collection_prev_"))
 async def callback_collection_prev(callback: CallbackQuery):
@@ -1564,12 +2609,18 @@ async def callback_collection_prev(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
-    sorted_collection = get_sorted_collection(user.collection)
-    
-    current_index = int(callback.data.split("_")[2])
+    parts = callback.data.split("_")
+    if len(parts) >= 4:
+        section = parts[2]
+        current_index = int(parts[3])
+        sorted_collection = filter_collection_by_rarity(user, section)
+    else:
+        section = "all"
+        sorted_collection = get_sorted_collection(user.collection)
+        current_index = int(parts[2])
     
     if current_index > 0:
-        await show_collection_card(callback.message, user, sorted_collection, current_index - 1)
+        await show_collection_card_section(callback.message, user, sorted_collection, current_index - 1, section)
     else:
         await callback.answer()
 
@@ -1583,12 +2634,18 @@ async def callback_collection_next(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
-    sorted_collection = get_sorted_collection(user.collection)
-    
-    current_index = int(callback.data.split("_")[2])
+    parts = callback.data.split("_")
+    if len(parts) >= 4:
+        section = parts[2]
+        current_index = int(parts[3])
+        sorted_collection = filter_collection_by_rarity(user, section)
+    else:
+        section = "all"
+        sorted_collection = get_sorted_collection(user.collection)
+        current_index = int(parts[2])
     
     if current_index < len(sorted_collection) - 1:
-        await show_collection_card(callback.message, user, sorted_collection, current_index + 1)
+        await show_collection_card_section(callback.message, user, sorted_collection, current_index + 1, section)
     else:
         await callback.answer()
 
@@ -1602,9 +2659,15 @@ async def callback_collection_view(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
-    sorted_collection = get_sorted_collection(user.collection)
-    
-    current_index = int(callback.data.split("_")[2])
+    parts = callback.data.split("_")
+    if len(parts) >= 4:
+        section = parts[2]
+        current_index = int(parts[3])
+        sorted_collection = filter_collection_by_rarity(user, section)
+    else:
+        section = "all"
+        sorted_collection = get_sorted_collection(user.collection)
+        current_index = int(parts[2])
     card = sorted_collection[current_index]
     
     media = get_card_media(card)
@@ -1613,14 +2676,14 @@ async def callback_collection_view(callback: CallbackQuery):
         msg = await callback.message.answer_photo(
             media,
             caption=get_text_card_detail(card, user.language),
-            reply_markup=get_card_detail_keyboard(user, card, from_collection=True, current_index=current_index),
+            reply_markup=get_card_detail_keyboard(user, card, from_collection=True, from_search=section, current_index=current_index),
             parse_mode="HTML"
         )
         await save_tg_file_id(card, msg)
     else:
         await callback.message.answer(
             get_text_card_detail(card, user.language),
-            reply_markup=get_card_detail_keyboard(user, card, from_collection=True, current_index=current_index),
+            reply_markup=get_card_detail_keyboard(user, card, from_collection=True, from_search=section, current_index=current_index),
             parse_mode="HTML"
         )
 
@@ -1634,9 +2697,15 @@ async def callback_collection_return(callback: CallbackQuery):
     user_id = callback.from_user.id
     username = callback.from_user.username
     user = user_manager.get_user(user_id, username)
-    sorted_collection = get_sorted_collection(user.collection)
-    
-    current_index = int(callback.data.split("_")[2])
+    parts = callback.data.split("_")
+    if len(parts) >= 4:
+        section = parts[2]
+        current_index = int(parts[3])
+        sorted_collection = filter_collection_by_rarity(user, section)
+    else:
+        section = "all"
+        sorted_collection = get_sorted_collection(user.collection)
+        current_index = int(parts[2])
     
     await callback.message.delete()
     await show_collection_card(callback.message, user, sorted_collection, current_index)
@@ -1858,6 +2927,9 @@ async def callback_fuse_duplicates(callback: CallbackQuery):
             continue
         new_collection.append(c)
     user.collection = new_collection
+
+    candies_gained = get_candies_for_fuse(rarity)
+    user.candies += max(0, int(candies_gained))
     
     pool = [c for c in FOOTBALL_PLAYERS if c.get("rarity") == next_rarity]
     if not pool:
@@ -1889,6 +2961,7 @@ async def callback_fuse_duplicates(callback: CallbackQuery):
     text = (
         f"♻️ <b>Сплавка завершена!</b>\n"
         f"Ты сплавил 5× <b>{html.escape(str(name_from))}</b> ({rarity})\n"
+        f"+{candies_gained} 🍬\n"
         f"и получил:\n"
         f"{get_text_card_detail(chosen, user.language)}"
     )
@@ -2087,7 +3160,7 @@ async def callback_battle_cancel_search(callback: CallbackQuery):
                 removed = True
                 break
     if removed:
-        await callback.message.edit_text(t["battle_search_cancelled"])
+        await safe_edit_or_send(callback.message, t["battle_search_cancelled"])
     else:
         await callback.answer("❌ Вы не в очереди", show_alert=True)
 
@@ -2114,6 +3187,10 @@ async def conduct_pvp_battle(message: Message, player1: UserData, player2: UserD
 
     winner.coins += 100
     loser.coins = max(0, loser.coins - 50)
+
+    # ELO только за битвы с реальными игроками (PVP)
+    winner.elo = (winner.elo if hasattr(winner, "elo") else 1000) + 30
+    loser.elo = max(0, (loser.elo if hasattr(loser, "elo") else 1000) - 25)
     user_manager.save_user(winner)
     user_manager.save_user(loser)
 
@@ -2152,6 +3229,419 @@ async def callback_noop(callback: CallbackQuery):
     await callback.answer()
 
 # ================ ЗАПУСК БОТА ================
+
+# ================ КЛАНЫ: ОБРАБОТЧИКИ ================
+def build_clans_page_text(user: UserData) -> str:
+    t = TRANSLATIONS[user.language]
+    if user.clan_id:
+        clan = clan_manager.get_clan(user.clan_id)
+        if not clan:
+            user.clan_id = None
+            user_manager.save_user(user)
+            return "Вы не состоите в клане."
+        privacy = "Открытый" if clan.is_open else "По приглашению"
+        rating = clan_manager.clan_rating(clan)
+        members_text = format_clan_members(clan)
+        return (
+            f"<b>{t['clans_title']}</b>\n\n"
+            f"🏷️ <b>{clan.name}</b>\n"
+            f"📝 {clan.description or '—'}\n"
+            f"🔐 {privacy}\n"
+            f"👥 Участники: {len(clan.members)}/11\n"
+            f"🏆 Рейтинг клана: <b>{rating}</b>\n\n"
+            f"<b>Состав:</b>\n{members_text}"
+        )
+
+    # не в клане
+    return (
+        f"<b>{t['clans_title']}</b>\n\n"
+        "Создай свой клан или вступи в существующий.\n"
+        "Стоимость создания: <b>100 💎</b>\n\n"
+        "🔓 Открытый клан — можно вступить сразу.\n"
+        "🔒 По приглашению — вступление только по приглашению главы."
+    )
+
+
+@dp.callback_query(F.data == "clans")
+async def callback_clans(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    await state.clear()
+    text = build_clans_page_text(user)
+    await render_page(
+        callback,
+        image_basename="clans",
+        text=text,
+        reply_markup=get_clans_menu_keyboard(user),
+    )
+
+
+@dp.callback_query(F.data == "rating")
+async def callback_rating(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    text = "<b>🏆 Рейтинг</b>\n\nВыберите таблицу ниже 👇"
+    await render_page(
+        callback,
+        image_basename="rating",
+        text=text,
+        reply_markup=get_rating_menu_keyboard(user),
+    )
+
+
+@dp.callback_query(F.data == "rating_players")
+async def callback_rating_players(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    # топ по Elo среди всех сохранённых пользователей
+    users_sorted = sorted(user_manager.users.values(), key=lambda u: getattr(u, "elo", 0), reverse=True)
+    top = users_sorted[:10]
+
+    if not top:
+        text = "Пока нет игроков в рейтинге."
+    else:
+        lines = ["<b>🏅 Рейтинг игроков</b>\n"]
+        for i, u in enumerate(top, start=1):
+            name = f"@{u.username}" if u.username else f"ID {u.user_id}"
+            lines.append(f"{i}. <b>{html.escape(name)}</b> — 🏆 {u.elo}")
+        text = "\n".join(lines)
+
+    await render_page(
+        callback,
+        image_basename="rating",
+        text=text,
+        reply_markup=get_players_rating_keyboard(user),
+    )
+
+
+@dp.callback_query(F.data == "clan_create")
+async def callback_clan_create(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    if user.clan_id:
+        await callback.message.answer("Вы уже состоите в клане.")
+        return
+    if user.gems < 100:
+        await callback.message.answer("Недостаточно алмазов. Нужно 100 💎 для создания клана.")
+        return
+    await state.set_state(ClanStates.creating_name)
+    await callback.message.answer("Введите название клана (3–20 символов):")
+
+
+@dp.message(ClanStates.creating_name)
+async def clan_creating_name(message: Message, state: FSMContext):
+    user = user_manager.get_user(message.from_user.id, message.from_user.username)
+    name = (message.text or "").strip()
+    if len(name) < 3 or len(name) > 20:
+        await message.answer("Название должно быть 3–20 символов. Попробуй ещё раз:")
+        return
+    # уникальность
+    for c in clan_manager.clans.values():
+        if c.name.strip().lower() == name.lower():
+            await message.answer("Клан с таким названием уже существует. Придумай другое:")
+            return
+    await state.update_data(name=name)
+    await state.set_state(ClanStates.creating_description)
+    await message.answer("Введите описание клана (до 150 символов):")
+
+
+@dp.message(ClanStates.creating_description)
+async def clan_creating_description(message: Message, state: FSMContext):
+    desc = (message.text or "").strip()
+    if len(desc) > 150:
+        await message.answer("Слишком длинно. До 150 символов. Попробуй ещё раз:")
+        return
+    await state.update_data(description=desc)
+    await state.set_state(ClanStates.creating_privacy)
+    user = user_manager.get_user(message.from_user.id, message.from_user.username)
+    await message.answer("Выберите тип клана:", reply_markup=get_clan_privacy_keyboard(user))
+
+
+@dp.callback_query(F.data.in_({"clan_privacy_open", "clan_privacy_invite"}))
+async def callback_clan_privacy(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    if user.clan_id:
+        await state.clear()
+        await callback.message.answer("Вы уже состоите в клане.")
+        return
+    if user.gems < 100:
+        await state.clear()
+        await callback.message.answer("Недостаточно алмазов. Нужно 100 💎 для создания клана.")
+        return
+    data = await state.get_data()
+    name = data.get("name", "Клан")
+    description = data.get("description", "")
+    is_open = callback.data == "clan_privacy_open"
+    clan = clan_manager.create_clan(name=name, description=description, is_open=is_open, owner_id=user.user_id)
+    user.gems -= 100
+    user.clan_id = clan.clan_id
+    user_manager.save_user(user)
+    await state.clear()
+
+    text = build_clans_page_text(user)
+    await render_page(callback, image_basename="clans", text=text, reply_markup=get_clans_menu_keyboard(user), force_new_message=True)
+
+
+@dp.callback_query(F.data == "clan_join_list")
+async def callback_clan_join_list(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    lines = ["<b>Открытые кланы (доступные места):</b>\n"]
+    shown = 0
+    for clan in clan_manager.top_clans(limit=50):
+        if not clan.is_open:
+            continue
+        if len(clan.members) >= 11:
+            continue
+        rating = clan_manager.clan_rating(clan)
+        lines.append(f"✅ <b>{clan.name}</b> — 👥 {len(clan.members)}/11 — 🏆 {rating}")
+        shown += 1
+        if shown >= 10:
+            break
+    if shown == 0:
+        lines = ["Сейчас нет открытых кланов с местами."]
+    await render_page(
+        callback,
+        image_basename="clans",
+        text="\n".join(lines),
+        reply_markup=get_clans_join_list_keyboard(user),
+    )
+
+
+@dp.callback_query(F.data.startswith("clan_join:"))
+async def callback_clan_join(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    if user.clan_id:
+        await callback.message.answer("Сначала покинь текущий клан.")
+        return
+    clan_id = callback.data.split(":", 1)[1]
+    clan = clan_manager.get_clan(clan_id)
+    if not clan:
+        await callback.message.answer("Клан не найден.")
+        return
+    if not clan.is_open:
+        await callback.message.answer("В этот клан можно вступить только по приглашению.")
+        return
+    if len(clan.members) >= 11:
+        await callback.message.answer("В клане нет свободных мест.")
+        return
+    clan.members[str(user.user_id)] = "player"
+    user.clan_id = clan.clan_id
+    user_manager.save_user(user)
+    clan_manager.save_data()
+    await callback.message.answer(f"Вы вступили в клан <b>{clan.name}</b>!", parse_mode="HTML")
+
+
+@dp.callback_query(F.data == "clan_invites")
+async def callback_clan_invites(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    await render_page(
+        callback,
+        image_basename="clans",
+        text="<b>Ваши приглашения:</b>",
+        reply_markup=get_clan_invites_keyboard(user),
+    )
+
+
+@dp.callback_query(F.data.startswith("clan_accept:"))
+async def callback_clan_accept(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    if user.clan_id:
+        await callback.message.answer("Сначала покинь текущий клан.")
+        return
+    clan_id = callback.data.split(":", 1)[1]
+    clan = clan_manager.get_clan(clan_id)
+    if not clan:
+        await callback.message.answer("Клан не найден.")
+        return
+    if len(clan.members) >= 11:
+        await callback.message.answer("В клане нет свободных мест.")
+        return
+    username = (user.username or "").lstrip("@").lower()
+    if not username or username not in [u.lower() for u in clan.invites]:
+        await callback.message.answer("Приглашение не найдено.")
+        return
+    clan.invites = [u for u in clan.invites if u.lower() != username]
+    clan.members[str(user.user_id)] = "player"
+    user.clan_id = clan.clan_id
+    user_manager.save_user(user)
+    clan_manager.save_data()
+    await callback.message.answer(f"Вы вступили в клан <b>{clan.name}</b>!", parse_mode="HTML")
+
+
+@dp.callback_query(F.data == "clan_invite")
+async def callback_clan_invite(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    if not user.clan_id:
+        await callback.message.answer("Вы не в клане.")
+        return
+    clan = clan_manager.get_clan(user.clan_id)
+    if not clan or clan.owner_id != user.user_id:
+        await callback.message.answer("Приглашать может только владелец клана.")
+        return
+    await state.set_state(ClanStates.inviting_username)
+    await callback.message.answer("Введи ник пользователя (например @username), которого хочешь пригласить:")
+
+
+@dp.message(ClanStates.inviting_username)
+async def clan_inviting_username(message: Message, state: FSMContext):
+    user = user_manager.get_user(message.from_user.id, message.from_user.username)
+    clan = clan_manager.get_clan(user.clan_id) if user.clan_id else None
+    if not clan or clan.owner_id != user.user_id:
+        await state.clear()
+        await message.answer("Приглашение отменено.")
+        return
+    nick = (message.text or "").strip().lstrip("@").lower()
+    if not nick:
+        await message.answer("Ник не распознан. Попробуй ещё раз:")
+        return
+    if nick in [u.lower() for u in clan.invites]:
+        await state.clear()
+        await message.answer("Этот ник уже приглашён.")
+        return
+    if len(clan.members) >= 11:
+        await state.clear()
+        await message.answer("В клане уже 11 участников. Нет мест.")
+        return
+    clan.invites.append(nick)
+    clan_manager.save_data()
+    await state.clear()
+    await message.answer(f"Приглашение отправлено для @{nick}.")
+
+
+@dp.callback_query(F.data == "clan_set_role")
+async def callback_clan_set_role(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    clan = clan_manager.get_clan(user.clan_id) if user.clan_id else None
+    if not clan or clan.owner_id != user.user_id:
+        await callback.message.answer("Выдавать роли может только владелец клана.")
+        return
+    await state.set_state(ClanStates.setrole_username)
+    await callback.message.answer("Введи ник участника (например @username), кому выдать роль:")
+
+
+@dp.message(ClanStates.setrole_username)
+async def clan_setrole_username(message: Message, state: FSMContext):
+    owner = user_manager.get_user(message.from_user.id, message.from_user.username)
+    clan = clan_manager.get_clan(owner.clan_id) if owner.clan_id else None
+    if not clan or clan.owner_id != owner.user_id:
+        await state.clear()
+        await message.answer("Выдача роли отменена.")
+        return
+    nick = (message.text or "").strip().lstrip("@").lower()
+    if not nick:
+        await message.answer("Ник не распознан. Попробуй ещё раз:")
+        return
+    target_uid = None
+    for uid_str in clan.members.keys():
+        try:
+            uid = int(uid_str)
+        except ValueError:
+            continue
+        u = user_manager.users.get(uid)
+        if u and (u.username or "").lstrip("@").lower() == nick:
+            target_uid = uid
+            break
+    if not target_uid:
+        await message.answer("Участник с таким ником не найден в клане. Попробуй ещё раз:")
+        return
+    if target_uid == clan.owner_id:
+        await state.clear()
+        await message.answer("Нельзя изменить роль владельца.")
+        return
+    await state.update_data(target_uid=target_uid)
+    await state.set_state(ClanStates.setrole_role)
+    await message.answer("Выберите роль:", reply_markup=get_role_select_keyboard(owner))
+
+
+@dp.callback_query(F.data.startswith("clan_role:"))
+async def callback_clan_role(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    owner = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    clan = clan_manager.get_clan(owner.clan_id) if owner.clan_id else None
+    if not clan or clan.owner_id != owner.user_id:
+        await state.clear()
+        await callback.message.answer("Выдача роли отменена.")
+        return
+    data = await state.get_data()
+    target_uid = data.get("target_uid")
+    role = callback.data.split(":", 1)[1]
+    if role not in ("coach", "player"):
+        await callback.message.answer("Неизвестная роль.")
+        return
+    clan.members[str(target_uid)] = role
+    clan_manager.save_data()
+    await state.clear()
+    await callback.message.answer("Роль обновлена!")
+
+
+@dp.callback_query(F.data == "clan_leave")
+async def callback_clan_leave(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    if not user.clan_id:
+        await callback.message.answer("Вы не состоите в клане.")
+        return
+    clan = clan_manager.get_clan(user.clan_id)
+    if not clan:
+        user.clan_id = None
+        user_manager.save_user(user)
+        await callback.message.answer("Клан не найден. Вы вышли из клана.")
+        return
+
+    is_owner = clan.owner_id == user.user_id
+    # удалить участника
+    clan.members.pop(str(user.user_id), None)
+    user.clan_id = None
+    user_manager.save_user(user)
+
+    # если глава ушёл — передать владельца
+    if is_owner and len(clan.members) > 0:
+        # приоритет: тренер, потом игрок
+        new_owner_id = None
+        for uid_str, role in clan.members.items():
+            if role == "coach":
+                new_owner_id = int(uid_str)
+                break
+        if new_owner_id is None:
+            new_owner_id = int(next(iter(clan.members.keys())))
+        clan.owner_id = new_owner_id
+        clan.members[str(new_owner_id)] = "owner"
+
+    # если клан пустой — удалить
+    if len(clan.members) == 0:
+        clan_manager.clans.pop(clan.clan_id, None)
+    clan_manager.save_data()
+
+    await callback.message.answer("Вы покинули клан.")
+
+
+@dp.callback_query(F.data == "clans_rating")
+async def callback_clans_rating(callback: CallbackQuery):
+    await callback.answer()
+    user = user_manager.get_user(callback.from_user.id, callback.from_user.username)
+    top = clan_manager.top_clans(limit=10)
+    if not top:
+        text = "Пока нет кланов."
+    else:
+        lines = ["<b>🏆 Рейтинг кланов</b>\n"]
+        for i, clan in enumerate(top, start=1):
+            rating = clan_manager.clan_rating(clan)
+            lines.append(f"{i}. <b>{clan.name}</b> — 🏆 {rating} — 👥 {len(clan.members)}/11")
+        text = "\n".join(lines)
+    await render_page(
+        callback,
+        image_basename="clans",
+        text=text,
+        reply_markup=get_clans_rating_keyboard(user),
+    )
+
 async def main():
     logging.basicConfig(level=logging.INFO)
     print("🤖 Футбольный Коллекционер Бот запущен...")
@@ -2165,7 +3655,198 @@ async def main():
     print(f"📚 Коллекция: навигация и поиск активированы!")
     print(f"🖼️ Кеш изображений: активирован (мгновенная загрузка после первого просмотра)")
     print(f"👤 Username: автоматическое сохранение и отображение")
+
+    # Команды бота (панель команд рядом с полем ввода)
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="menu", description="Открыть главное меню"),
+            BotCommand(command="profile", description="Профиль"),
+            BotCommand(command="packs", description="Пакеты"),
+            BotCommand(command="minigames", description="Мини-игры"),
+            BotCommand(command="clans", description="Кланы"),
+            BotCommand(command="settings", description="Настройки"),
+            BotCommand(command="help", description="Список команд"),
+        ],
+        scope=BotCommandScopeDefault(),
+    )
+
     await dp.start_polling(bot)
+
+def get_stars_shop_keyboard(lang: Language):
+    t = TRANSLATIONS[lang]
+    b = InlineKeyboardBuilder()
+    b.button(text=t.get("topup_stars", "➕ Пополнить Stars"), callback_data="stars_topup")
+    b.button(text=t.get("buy_diamonds_stars", "💎 Купить алмазы за Stars"), callback_data="stars_buy_diamonds")
+    b.button(text=t["back"], callback_data="main_menu")
+    b.adjust(1)
+    return b.as_markup()
+
+def get_stars_topup_keyboard(lang: Language):
+    t = TRANSLATIONS[lang]
+    b = InlineKeyboardBuilder()
+    for amt in STARS_TOPUP_OPTIONS:
+        b.button(text=f"➕ {amt}⭐", callback_data=f"stars_topup_{amt}")
+    b.button(text=t["back"], callback_data="stars_shop")
+    b.adjust(1)
+    return b.as_markup()
+
+def get_stars_buy_diamonds_keyboard(lang: Language):
+    t = TRANSLATIONS[lang]
+    b = InlineKeyboardBuilder()
+    for key, pack in DIAMONDS_FOR_STARS.items():
+        b.button(text=f"{pack['diamonds']}💎 — {pack['cost_stars']}⭐", callback_data=f"stars_buy_{key}")
+    b.button(text=t["back"], callback_data="stars_shop")
+    b.adjust(1)
+    return b.as_markup()
+
+@dp.callback_query(F.data.in_({"stars_shop","shop"}))
+async def callback_stars_shop(callback: CallbackQuery):
+    user = get_user_data(callback.from_user.id)
+    t = TRANSLATIONS[user.language]
+    stars = getattr(user, "stars_balance", 0)
+    text = (
+        f"💵 <b>Магазин $</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"⭐ Баланс Stars: <b>{stars}</b>\n"
+        f"💎 Алмазы: <b>{user.gems}</b>\n\n"
+        f"Выберите действие:"
+    )
+    await render_page(callback, image_basename="diamonds", text=text, reply_markup=get_stars_shop_keyboard(user.language))
+    await callback.answer()
+
+@dp.callback_query(F.data == "stars_topup")
+async def callback_stars_topup(callback: CallbackQuery, state: FSMContext):
+    user = get_user_data(callback.from_user.id)
+    t = TRANSLATIONS[user.language]
+    stars = getattr(user, "stars_balance", 0)
+
+    text = (
+        f"⭐ <b>Пополнение Stars</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"Ваш баланс: <b>{stars}</b>⭐\n\n"
+        f"Введите сумму Stars, которую хотите зачислить в игру (числом).\n"
+        f"Например: <b>250</b>"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t["back"], callback_data="stars_shop")]])
+    await render_page(callback, image_basename="diamonds", text=text, reply_markup=kb)
+    await state.set_state(StarsTopUpStates.waiting_amount)
+    await callback.answer()
+
+
+@dp.message(StarsTopUpStates.waiting_amount)
+async def message_stars_topup_amount(message: Message, state: FSMContext):
+    user = get_user_data(message.from_user.id)
+    txt = (message.text or "").strip()
+
+    if not txt.isdigit():
+        await message.answer("Введите сумму числом (например 250).")
+        return
+
+    amt = int(txt)
+    if amt <= 0:
+        await message.answer("Сумма должна быть больше 0.")
+        return
+    # Разумный верхний лимит, чтобы не улететь в космос
+    if amt > 50000:
+        await message.answer("Слишком большая сумма. Введите число до 50000.")
+        return
+
+    prices = [LabeledPrice(label=f"Пополнение {amt}⭐", amount=amt)]  # для Stars должен быть 1 item
+    await message.bot.send_invoice(
+        chat_id=message.from_user.id,
+        title=f"Пополнение Stars: {amt}⭐",
+        description="Stars зачислятся на ваш внутренний баланс в игре.",
+        payload=f"stars_topup:{amt}:{message.from_user.id}",
+        provider_token="",
+        currency="XTR",
+        prices=prices,
+    )
+    await state.clear()
+
+
+@dp.callback_query(F.data.startswith("stars_topup_"))
+async def callback_stars_topup_invoice(callback: CallbackQuery):
+    try:
+        amt = int(callback.data.split("_")[-1])
+    except Exception:
+        await callback.answer("Ошибка суммы", show_alert=True)
+        return
+    if amt not in STARS_TOPUP_OPTIONS:
+        await callback.answer("Недоступно", show_alert=True)
+        return
+
+    prices = [LabeledPrice(label=f"Пополнение {amt}⭐", amount=amt)]  # для Stars должен быть 1 item
+    await callback.bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title=f"Пополнение Stars: {amt}⭐",
+        description="Stars зачислятся на ваш внутренний баланс в игре.",
+        payload=f"stars_topup:{amt}:{callback.from_user.id}",
+        provider_token="",
+        currency="XTR",
+        prices=prices,
+    )
+    await callback.answer("Оплата открыта ⭐")
+
+@dp.callback_query(F.data == "stars_buy_diamonds")
+async def callback_stars_buy_diamonds(callback: CallbackQuery):
+    user = get_user_data(callback.from_user.id)
+    t = TRANSLATIONS[user.language]
+    stars = getattr(user, "stars_balance", 0)
+    text = (
+        f"💎 <b>{t.get('stars_spend_title','Алмазы за Stars')}</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"⭐ Баланс Stars: <b>{stars}</b>\n\n"
+        f"Выберите пакет:"
+    )
+    await safe_edit_or_send(callback.message, text, reply_markup=get_stars_buy_diamonds_keyboard(user.language))
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("stars_buy_"))
+async def callback_stars_buy_diamonds_apply(callback: CallbackQuery):
+    user = get_user_data(callback.from_user.id)
+    key = callback.data.replace("stars_buy_", "")
+    pack = DIAMONDS_FOR_STARS.get(key)
+    if not pack:
+        await callback.answer("Пакет не найден", show_alert=True)
+        return
+    cost = pack["cost_stars"]
+    stars = getattr(user, "stars_balance", 0)
+    if stars < cost:
+        await callback.answer("❌ Недостаточно Stars", show_alert=True)
+        return
+    user.stars_balance = stars - cost
+    user.gems += pack["diamonds"]
+    save_user_data(user)
+    await callback.answer("✅ Успешно!")
+    await callback_stars_buy_diamonds(callback)
+
+@dp.pre_checkout_query()
+async def pre_checkout_query_handler(pre_checkout_query: PreCheckoutQuery):
+    await pre_checkout_query.answer(ok=True)
+
+@dp.message(F.successful_payment)
+async def successful_payment_handler(message: Message):
+    sp = message.successful_payment
+    payload = sp.invoice_payload or ""
+    parts = payload.split(":")
+    # ожидаем: stars_topup:<amount>:<user_id>
+    if len(parts) != 3 or parts[0] != "stars_topup":
+        return
+    try:
+        amt = int(parts[1])
+        uid = int(parts[2])
+    except Exception:
+        return
+    if uid != message.from_user.id:
+        return
+    if sp.currency != "XTR" or sp.total_amount != amt:
+        return
+    user = get_user_data(uid)
+    user.stars_balance = getattr(user, "stars_balance", 0) + amt
+    save_user_data(user)
+    logger.info(f"[STARS TOPUP] user_id={uid} +{amt}⭐ total={user.stars_balance}")
+    await message.answer(f"✅ Stars зачислены: +{amt}⭐\nВаш баланс: {user.stars_balance}⭐")
 
 if __name__ == "__main__":
     try:
