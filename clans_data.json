@@ -1,0 +1,14 @@
+{
+  "8cd0858c19": {
+    "clan_id": "8cd0858c19",
+    "name": "Фрики",
+    "description": "Мы реальные дроны",
+    "is_open": false,
+    "owner_id": 1059502268,
+    "members": {
+      "1059502268": "owner",
+      "5999225524": "player"
+    },
+    "invites": []
+  }
+}

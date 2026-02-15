@@ -1,0 +1,17 @@
+$env:BOT_TOKEN="8043224448:AAH2guiJy4p8VAhT_ffL862BgE7Zj0daGas"
+
+PACK_PROBABILITIES = {
+    "basic": {
+        "common": 60,
+        "rare": 35,
+        "epic": 4,
+        "legendary": 0.9,
+        "mythic": 0.1
+    },
+    "premium": {
+        "rare": 55,
+        "epic": 30,
+        "legendary": 13,
+        "mythic": 2
+    }
+}
