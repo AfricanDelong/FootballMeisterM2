@@ -9,7 +9,7 @@ import html
 from datetime import datetime
 from typing import Dict, List, Optional
 from enum import Enum
-
+from typing import Optional
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
@@ -989,7 +989,7 @@ def get_user_data(user_id: int, username: str | None = None) -> 'UserData':
     """Wrapper to keep handler code readable."""
     return user_manager.get_user(user_id, username=username)
 
-def save_user_data(_: 'UserData' | None = None):
+def save_user_data(_: Optional['UserData'] = None):
     """Persist all user data."""
     user_manager.save_data()
 
