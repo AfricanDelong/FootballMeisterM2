@@ -1297,7 +1297,6 @@ def get_packs_keyboard(lang: Language):
         callback_data="buy_ultra"
     )
     builder.button(text=t["free_pack"], callback_data="free_pack_menu")
-    builder.button(text=t.get("stars_shop", "⭐ Stars"), callback_data="stars_shop")
     builder.button(text=t["back"], callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -3853,3 +3852,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
+
