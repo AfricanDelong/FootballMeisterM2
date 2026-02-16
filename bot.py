@@ -1768,7 +1768,22 @@ async def cmd_reset(message: Message):
     await message.answer(t["progress_reset"])
 
 # ================ ОБРАБОТЧИКИ КОЛЛБЭКОВ ================
-
+# Обработчик команды /anekdot
+@dp.message(Command("anekdot"))
+async def cmd_anekdot(message: Message):
+    # Путь к картинке
+    image_path = os.path.join(IMAGES_PATH, "anekdot.jpg")
+    
+    # Проверка, существует ли картинка
+    if os.path.exists(image_path):
+        # Отправляем картинку
+        await message.answer_photo(
+            photo=FSInputFile(image_path),
+            caption="Вот вам анекдот! 😄",  # Здесь можно добавить текст, если нужно
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("Извините, картинка с анекдотом не найдена.")
 
 # =============== КОМАНДЫ (Меню рядом с текстовой строкой) ===============
 @dp.message(Command("help"))
@@ -3848,3 +3863,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
+
