@@ -4030,5 +4030,21 @@
     "description_ru": "Особая конфетная редкость. Играет на позиции «Вингер» и ценится за умное движение без мяча, точные завершения и работу между линиями. При рейтинге 111 он выделяется хладнокровием в штрафной и умением открываться в нужный момент. Интересный факт: на тренировках часто остаётся после занятий, чтобы отработать удары в одно касание.",
     "description_en": "A special Candy-rarity card. Plays as a Winger and is valued for intelligent off-the-ball movement, composed finishing and smart positioning between the lines. With a 111 OVR he stands out for his calmness inside the box and perfectly timed runs. Fun fact: often stays after training to practice one-touch finishing drills.",
     "image": "ferran_torres.png"
+  },
+  {
+  "id": 254,
+  "name_ru": "Джесси Лингард",
+  "name_en": "Jesse Lingard",
+  "rarity": "candy",
+  "rarity_name_ru": "Конфетная",
+  "rarity_name_en": "Candy",
+  "country_ru": "🏴 Англия",
+  "country_en": "🏴 England",
+  "position_ru": "Полузащитник",
+  "position_en": "Midfielder",
+  "ovr": 111,
+  "description_ru": "Особая конфетная редкость. Играет на позиции «Атакующий полузащитник» и ценится за динамику, креативность и умение подключаться к атакам из глубины. При рейтинге 111 он выделяется резкими рывками, дальними ударами и способностью решать эпизоды в больших матчах. Интересный факт: известен своей энергичной манерой празднования голов и харизмой на поле.",
+  "description_en": "A special Candy-rarity card. Plays as an Attacking Midfielder and is valued for his dynamism, creativity and late attacking runs from deep. With a 111 OVR he stands out for sharp movement, long-range shots and delivering in big matches. Fun fact: well known for his energetic goal celebrations and charismatic presence on the pitch.",
+  "image": "jesse_lingard.png"
   }
 ]
