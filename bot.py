@@ -164,6 +164,7 @@ RARITY_ALIASES = {
     "legendary": "legendary", "легендарная": "legendary", "лега": "legendary",
     "mythic": "mythic", "мифическая": "mythic", "мифик": "mythic",
     "candy": "candy", "конфетная": "candy", "конфетный": "candy", "🍬": "candy",
+    "immortal": "immortal", "бессмертная": "immortal", "бессмертный": "immortal", "♾️": "immortal",
 }
 
 async def send_minigame_sticker(
@@ -236,6 +237,69 @@ def load_players():
         ]
 
 FOOTBALL_PLAYERS = load_players()
+
+
+def get_immortal_pool() -> list[dict]:
+    """Ровно 3 наградные Immortal карточки текущего сезона.
+    Если в базе есть >=3 immortal — берём первые 3 (стабильно по id).
+    Иначе используем встроенный fallback.
+    """
+    pool = [c for c in FOOTBALL_PLAYERS if normalize_rarity(c.get("rarity")) == "immortal"]
+    if len(pool) >= 3:
+        def _cid(x):
+            try:
+                return int(x.get("id", 0))
+            except Exception:
+                return 0
+        pool.sort(key=_cid)
+        return pool[:3]
+
+    # fallback: 3 эксклюзивные карты (пока не добавлены в players.json)
+    return [
+        {
+            "id": 990001,
+            "name_ru": "Immortal: Страж Цитадели",
+            "name_en": "Immortal: Citadel Warden",
+            "rarity": "immortal",
+            "rarity_name_ru": "Бессмертная",
+            "rarity_name_en": "Immortal",
+            "position_ru": "Игрок",
+            "position_en": "Player",
+            "ovr": 99,
+            "description_ru": "Эксклюзив за прохождение Цитадели в этом сезоне.",
+            "description_en": "Exclusive reward for clearing the Citadel this season.",
+            "image": None,
+        },
+        {
+            "id": 990002,
+            "name_ru": "Immortal: Повелитель Пустоты",
+            "name_en": "Immortal: Void Sovereign",
+            "rarity": "immortal",
+            "rarity_name_ru": "Бессмертная",
+            "rarity_name_en": "Immortal",
+            "position_ru": "Игрок",
+            "position_en": "Player",
+            "ovr": 99,
+            "description_ru": "Эксклюзив за прохождение Цитадели в этом сезоне.",
+            "description_en": "Exclusive reward for clearing the Citadel this season.",
+            "image": None,
+        },
+        {
+            "id": 990003,
+            "name_ru": "Immortal: Легенда Времени",
+            "name_en": "Immortal: Time Legend",
+            "rarity": "immortal",
+            "rarity_name_ru": "Бессмертная",
+            "rarity_name_en": "Immortal",
+            "position_ru": "Игрок",
+            "position_en": "Player",
+            "ovr": 99,
+            "description_ru": "Эксклюзив за прохождение Цитадели в этом сезоне.",
+            "description_en": "Exclusive reward for clearing the Citadel this season.",
+            "image": None,
+        },
+    ]
+
 
 # ================ КЕШ ИЗОБРАЖЕНИЙ ================
 IMAGE_CACHE = {}
@@ -557,7 +621,19 @@ TRANSLATIONS = {
         "battle_result_win": "🎉 ПОБЕДА! +{reward} монет",
         "battle_result_lose": "😔 ПОРАЖЕНИЕ! -{penalty} монет",
         "card_will_disappear": "\n\n⏳ Карточка исчезнет через {seconds} сек.",
-    },
+    
+"tower_title": "🏛 Цитадель (Сезонный режим)",
+"tower_rules_text": "Правила:\n• 10 уровней (мини-футбол 6 игроков): 1 GK, 2 DEF, 2 MID, 1 FWD\n• На DEF и MID нельзя ставить двух одинаковых игроков\n• OVR противника растёт по прогрессии, на 10 уровне босс 555 OVR\n• Победа только если твой OVR строго больше OVR соперника (без исключений)\n• За сезон можно получить только 1 Immortal-карту (1 из 3), после чего Цитадель закрывается до следующего сезона",
+"tower_closed": "🏛 Цитадель закрыта до следующего сезона. Возвращайся позже!",
+"tower_status": "Уровень: {level}/10\nТвой OVR (6 игроков): {player_ovr}\nOVR соперника: {enemy_ovr}",
+"tower_status_no_team": "Уровень: {level}/10\nOVR соперника: {enemy_ovr}\n\nСобери состав мини-футбола: 1 GK, 2 DEF, 2 MID, 1 FWD (DEF/MID без повторов).",
+"tower_win_level": "✅ Победа! Ты прошёл уровень {level}/10.",
+"tower_lose_level": "❌ Поражение. Нужен OVR строго больше: {need}+.\nТвой OVR: {player_ovr} | Соперник: {enemy_ovr}",
+"tower_reward_text": "🏆 Ты покорил Цитадель!\nТвоя награда сезона: <b>{card_name}</b> (Immortal).\n\n🏛 Теперь Цитадель закрыта до следующего сезона.",
+"tower_btn_fight": "⚔️ Бой",
+"tower_btn_rules": "ℹ️ Правила",
+"tower_btn_back": "⬅️ Назад",
+},
     Language.EN: {
         "main_menu": "⚽ Football Collector",
         "packs": "📦 Packs",
@@ -691,6 +767,18 @@ TRANSLATIONS = {
         "battle_result_win": "🎉 VICTORY! +{reward} coins",
         "battle_result_lose": "😔 DEFEAT! -{penalty} coins",
         "card_will_disappear": "\n\n⏳ Card will disappear in {seconds} sec.",
+"tower_title": "🏛 Citadel (Seasonal Mode)",
+"tower_rules_text": "Rules:\n• 10 levels (6-player mini-football): 1 GK, 2 DEF, 2 MID, 1 FWD\n• You can’t use two identical players on DEF or MID\n• Enemy OVR grows in an arithmetic progression, boss on level 10 has 555 OVR\n• You win only if your OVR is strictly higher than the enemy OVR (no exceptions)\n• Only 1 Immortal card per season (1 of 3). After that, the Citadel is closed until next season",
+"tower_closed": "🏛 The Citadel is closed until the next season. Come back later!",
+"tower_status": "Level: {level}/10\nYour OVR (6 players): {player_ovr}\nEnemy OVR: {enemy_ovr}",
+"tower_status_no_team": "Level: {level}/10\nEnemy OVR: {enemy_ovr}\n\nBuild a mini-football team: 1 GK, 2 DEF, 2 MID, 1 FWD (no duplicates on DEF/MID).",
+"tower_win_level": "✅ Victory! You cleared level {level}/10.",
+"tower_lose_level": "❌ Defeat. You need strictly higher OVR: {need}+.\nYour OVR: {player_ovr} | Enemy: {enemy_ovr}",
+"tower_reward_text": "🏆 You conquered the Citadel!\nSeason reward: <b>{card_name}</b> (Immortal).\n\n🏛 The Citadel is now closed until next season.",
+"tower_btn_fight": "⚔️ Fight",
+"tower_btn_rules": "ℹ️ Rules",
+"tower_btn_back": "⬅️ Back",
+
     }
 }
 
@@ -731,6 +819,43 @@ PACK_PRICES = {
     "free": {"coins": 0, "gems": 0},
     "ultra": {"coins": 0, "gems": 500}
 }
+
+
+# ======= Seasonal PvE Tower (Цитадель) =======
+TOWER_LEVELS = 10
+TOWER_BOSS_OVR = 555
+# Стартовую сложность можно менять; шаг считается как арифметическая прогрессия до босса.
+TOWER_START_OVR = 375
+TOWER_STEP = (TOWER_BOSS_OVR - TOWER_START_OVR) // (TOWER_LEVELS - 1)
+
+def current_season_id(dt: datetime | None = None) -> str:
+    d = dt or datetime.now()
+    return d.strftime("%Y-%m")
+
+def tower_ai_ovr(level: int) -> int:
+    level = max(1, min(TOWER_LEVELS, int(level)))
+    return int(TOWER_START_OVR + (level - 1) * TOWER_STEP)
+
+def ensure_tower_state(user: "UserData"):
+    """Сезонная логика Цитадели:
+    - в каждом сезоне можно получить только 1 награду Immortal (одну из трёх)
+    - после получения награды башня закрыта до следующего сезона
+    - при смене сезона прогресс сбрасывается
+    """
+    season = current_season_id()
+    # Поля могут отсутствовать у старых сохранений
+    if not hasattr(user, "tower_season"):
+        user.tower_season = season
+    if not hasattr(user, "tower_level"):
+        user.tower_level = 1
+    if not hasattr(user, "tower_rewarded_season"):
+        user.tower_rewarded_season = ""
+
+    # смена сезона → сброс прогресса
+    if user.tower_season != season:
+        user.tower_season = season
+        user.tower_level = 1
+        user.tower_rewarded_season = ""
 
 # ================ КОНФЕТНАЯ ЛАВКА ================
 CANDY_SHOP_PRICE_RANDOM = 50
@@ -780,6 +905,11 @@ class UserData:
         self.elo = 1000
         self.packs_opened_total = 0
         self.clan_id = None
+
+        # ======= Tower (Цитадель) seasonal progress =======
+        self.tower_season = current_season_id()
+        self.tower_level = 1
+        self.tower_rewarded_season = ""  # если == текущему сезону, награда уже получена и башня закрыта
     def to_dict(self):
         return {
             "user_id": self.user_id,
@@ -798,7 +928,10 @@ class UserData:
             "dice_total": self.dice_total,
             "elo": self.elo,
             "packs_opened_total": self.packs_opened_total,
-            "clan_id": self.clan_id}
+            "clan_id": self.clan_id,
+            "tower_season": self.tower_season,
+            "tower_level": self.tower_level,
+            "tower_rewarded_season": self.tower_rewarded_season}
 
     @classmethod
     def from_dict(cls, data):
@@ -827,6 +960,11 @@ class UserData:
         user.elo = data.get("elo", 1000)
         user.packs_opened_total = data.get("packs_opened_total", 0)
         user.clan_id = data.get("clan_id")
+
+        # Tower (Цитадель)
+        user.tower_season = data.get("tower_season", current_season_id())
+        user.tower_level = data.get("tower_level", 1)
+        user.tower_rewarded_season = data.get("tower_rewarded_season", "")
         return user
 
     def check_free_packs_refresh(self):
@@ -1080,18 +1218,190 @@ def get_best_team(collection: list, lang: Language):
     total_ovr = sum(best[p].get("ovr", 0) for p in best)
     return best, total_ovr
 
-def format_team_display(team: dict, lang: Language) -> str:
-    lines = []
+def get_best_futsal_team(collection: list, lang: Language):
+    """Состав мини-футбола (6 игроков): 1 GK, 2 DEF, 2 MID, 1 FWD.
+    На DEF/MID нельзя использовать двух одинаковых игроков (по card_identity_key).
+    Возвращает (team_dict, total_ovr) или (None, reason).
+    team_dict keys: goalkeeper, defender1, defender2, midfielder1, midfielder2, forward
+    """
+    pos_map = {
+        "вратарь": "goalkeeper", "goalkeeper": "goalkeeper",
+        "защитник": "defender", "defender": "defender",
+        "полузащитник": "midfielder", "midfielder": "midfielder",
+        "нападающий": "forward", "forward": "forward",
+    }
+
+    gk, defs, mids, fwd = [], [], [], []
+    for card in collection:
+        pos_ru = (card.get("position_ru") or "").lower().strip()
+        pos_en = (card.get("position_en") or "").lower().strip()
+        pos = pos_map.get(pos_ru) or pos_map.get(pos_en)
+        if not pos:
+            continue
+        if pos == "goalkeeper":
+            gk.append(card)
+        elif pos == "defender":
+            defs.append(card)
+        elif pos == "midfielder":
+            mids.append(card)
+        elif pos == "forward":
+            fwd.append(card)
+
+    gk.sort(key=lambda c: c.get("ovr", 0), reverse=True)
+    defs.sort(key=lambda c: c.get("ovr", 0), reverse=True)
+    mids.sort(key=lambda c: c.get("ovr", 0), reverse=True)
+    fwd.sort(key=lambda c: c.get("ovr", 0), reverse=True)
+
     t = TRANSLATIONS[lang]
-    for pos, key in [("goalkeeper", "battle_no_goalkeeper"),
-                     ("defender", "battle_no_defender"),
-                     ("midfielder", "battle_no_midfielder"),
-                     ("forward", "battle_no_forward")]:
-        card = team[pos]
-        name = card["name_ru"] if lang == Language.RU else card["name_en"]
-        ovr = card.get("ovr", 0)
-        emoji = {"goalkeeper": "🧤", "defender": "🛡️", "midfielder": "🎯", "forward": "⚽"}.get(pos, "")
-        lines.append(f"{emoji} {t[key]}: {name} (OVR {ovr})")
+    if not gk:
+        return None, t["battle_no_goalkeeper"]
+    if len(defs) < 2:
+        return None, t["battle_no_defender"]
+    if len(mids) < 2:
+        return None, t["battle_no_midfielder"]
+    if not fwd:
+        return None, t["battle_no_forward"]
+
+    team = {"goalkeeper": gk[0]}
+
+    # выбрать 2 разных DEF
+    chosen_defs, used = [], set()
+    for c in defs:
+        k = card_identity_key(c)
+        if k in used:
+            continue
+        chosen_defs.append(c)
+        used.add(k)
+        if len(chosen_defs) == 2:
+            break
+    if len(chosen_defs) < 2:
+        return None, t["battle_missing_position"].format(position=t["battle_no_defender"])
+
+    team["defender1"], team["defender2"] = chosen_defs
+
+    # выбрать 2 разных MID
+    chosen_mids, used = [], set()
+    for c in mids:
+        k = card_identity_key(c)
+        if k in used:
+            continue
+        chosen_mids.append(c)
+        used.add(k)
+        if len(chosen_mids) == 2:
+            break
+    if len(chosen_mids) < 2:
+        return None, t["battle_missing_position"].format(position=t["battle_no_midfielder"])
+
+    team["midfielder1"], team["midfielder2"] = chosen_mids
+    team["forward"] = fwd[0]
+
+    total_ovr = sum(team[k].get("ovr", 0) for k in team)
+    return team, total_ovr
+
+def rarity_emoji(rarity: str) -> str:
+    rarity = (rarity or "").lower()
+    mapping = {
+        "common": "⚪",
+        "rare": "🔵",
+        "epic": "🟣",
+        "legendary": "🟡",
+        "mythic": "🔴",
+        "candy": "🍬",
+        "immortal": "♾️"
+    }
+    return mapping.get(rarity, "⚪")
+
+
+
+def rarity_to_emoji(rarity: str) -> str:
+    r = normalize_rarity(rarity or "")
+    return {
+        "common": "🟢",
+        "rare": "🔵",
+        "epic": "🟣",
+        "legendary": "👑",
+        "mythic": "🤍💎",
+        "candy": "🍬",
+        "immortal": "♾️",
+    }.get(r, "✨")
+
+def format_team_display(team: dict, lang: str) -> str:
+    if not team:
+        return ""
+
+    lines = []
+    lines.append("⚽ Твой состав (Мини-футбол 6x6)\n")
+
+    pos_names_ru = {
+        "goalkeeper": "🧤 Вратарь",
+        "defender1": "🛡 Защитник 1",
+        "defender2": "🛡 Защитник 2",
+        "midfielder1": "🎯 Полузащитник 1",
+        "midfielder2": "🎯 Полузащитник 2",
+        "forward": "⚡ Нападающий"
+    }
+
+    pos_names_en = {
+        "goalkeeper": "🧤 Goalkeeper",
+        "defender1": "🛡 Defender 1",
+        "defender2": "🛡 Defender 2",
+        "midfielder1": "🎯 Midfielder 1",
+        "midfielder2": "🎯 Midfielder 2",
+        "forward": "⚡ Forward"
+    }
+
+    pos_names = pos_names_ru if lang == "ru" else pos_names_en
+
+    for key in [
+        "goalkeeper",
+        "defender1",
+        "defender2",
+        "midfielder1",
+        "midfielder2",
+        "forward"
+    ]:
+        card = team.get(key)
+        if not card:
+            continue
+
+        name = card.get("name_ru") if lang == "ru" else card.get("name_en")
+        emoji = rarity_emoji(card.get("rarity"))
+        lines.append(f"{pos_names[key]}: {emoji} {name}")
+
+    return "\n".join(lines)
+
+
+def format_futsal_team_display(team: dict, lang: Language) -> str:
+    """Форматирует состав мини-футбола (6 игроков) для отображения в Цитадели."""
+    def nm(card: dict) -> str:
+        return card.get("name_ru") if lang == Language.RU else card.get("name_en")
+
+    lines = []
+    if lang == Language.RU:
+        labels = [
+            ("🧤 Вратарь", "goalkeeper"),
+            ("🛡️ Защитник 1", "defender1"),
+            ("🛡️ Защитник 2", "defender2"),
+            ("🎯 Полузащитник 1", "midfielder1"),
+            ("🎯 Полузащитник 2", "midfielder2"),
+            ("⚽ Нападающий", "forward"),
+        ]
+    else:
+        labels = [
+            ("🧤 Goalkeeper", "goalkeeper"),
+            ("🛡️ Defender 1", "defender1"),
+            ("🛡️ Defender 2", "defender2"),
+            ("🎯 Midfielder 1", "midfielder1"),
+            ("🎯 Midfielder 2", "midfielder2"),
+            ("⚽ Forward", "forward"),
+        ]
+
+    for label, key in labels:
+        card = team.get(key)
+        if not card:
+            continue
+        lines.append(f"{label}: {rarity_to_emoji(card.get('rarity'))} <b>{html.escape(nm(card) or '')}</b>")
+
     return "\n".join(lines)
 
 # ================ ФУНКЦИИ ДЛЯ ПОИСКА ================
@@ -1493,6 +1803,7 @@ def get_battle_mode_keyboard(lang: Language):
     builder = InlineKeyboardBuilder()
     builder.button(text=t["battle_vs_player"], callback_data="battle_pvp")
     builder.button(text=t["battle_vs_ai"], callback_data="battle_ai")
+    builder.button(text="🏛 Цитадель" if lang == Language.RU else "🏛 Citadel", callback_data="tower_menu")
     builder.button(text=t["back"], callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -1507,6 +1818,16 @@ def get_ai_level_keyboard(lang: Language):
     builder.button(text=t["back"], callback_data="battle_mode")
     builder.adjust(1)
     return builder.as_markup()
+
+def get_tower_keyboard(lang: Language):
+    t = TRANSLATIONS[lang]
+    builder = InlineKeyboardBuilder()
+    builder.button(text=t["tower_btn_fight"], callback_data="tower_fight")
+    builder.button(text=t["tower_btn_back"], callback_data="battle_mode")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 
 def get_battle_search_keyboard(lang: Language):
     t = TRANSLATIONS[lang]
@@ -1768,22 +2089,7 @@ async def cmd_reset(message: Message):
     await message.answer(t["progress_reset"])
 
 # ================ ОБРАБОТЧИКИ КОЛЛБЭКОВ ================
-# Обработчик команды /anekdot
-@dp.message(Command("anekdot"))
-async def cmd_anekdot(message: Message):
-    # Путь к картинке
-    image_path = os.path.join(IMAGES_PATH, "anekdot.jpg")
-    
-    # Проверка, существует ли картинка
-    if os.path.exists(image_path):
-        # Отправляем картинку
-        await message.answer_photo(
-            photo=FSInputFile(image_path),
-            caption="Вот вам анекдот! 😄",  # Здесь можно добавить текст, если нужно
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer("Извините, картинка с анекдотом не найдена.")
+
 
 # =============== КОМАНДЫ (Меню рядом с текстовой строкой) ===============
 @dp.message(Command("help"))
@@ -3008,7 +3314,115 @@ async def callback_battle_mode(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
+
+@dp.callback_query(F.data == "tower_menu")
+async def callback_tower_menu(callback: CallbackQuery):
+    try:
+        await callback.answer()
+    except TelegramBadRequest:
+        return
+
+    user_id = callback.from_user.id
+    username = callback.from_user.username or callback.from_user.full_name
+    user = user_manager.get_user(user_id, username=username)
+    ensure_tower_state(user)
+
+    t = TRANSLATIONS[user.language]
+    season = current_season_id()
+
+    # Закрыто, если награда уже получена в этом сезоне
+    if user.tower_rewarded_season == season or user.tower_level > TOWER_LEVELS:
+        text = f'<b>{t["tower_title"]}</b>\n\n{t["tower_closed"]}'
+        await render_page(callback, image_basename="citadel", text=text, reply_markup=get_tower_keyboard(user.language))
+        return
+
+    level = max(1, int(user.tower_level))
+    enemy_ovr = tower_ai_ovr(level)
+
+    team, info = get_best_futsal_team(user.collection, user.language)
+    if team is None:
+        text = f'<b>{t["tower_title"]}</b>\n\n{t["tower_closed"]}'
+        await render_page(callback, image_basename="citadel", text=text, reply_markup=get_tower_keyboard(user.language))
+        return
+
+    level = max(1, int(user.tower_level))
+    enemy_ovr = tower_ai_ovr(level)
+
+    team, info = get_best_futsal_team(user.collection, user.language)
+    if team is None:
+        # info — причина
+        text = (
+            f'<b>{t["tower_title"]}</b>\n\n'
+            + t["tower_status_no_team"].format(level=level, enemy_ovr=enemy_ovr)
+            + f'\n\n<b>{html.escape(info)}</b>'
+        )
+        await render_page(callback, image_basename="citadel", text=text, reply_markup=get_tower_keyboard(user.language))
+        return
+
+    player_ovr = int(info)
+
+    if player_ovr > enemy_ovr:
+        # Победа по строгому правилу
+        if level < TOWER_LEVELS:
+            user.tower_level = level + 1
+            save_user_data()
+
+            next_level = level + 1
+            next_enemy = tower_ai_ovr(next_level)
+
+            # Пере-расчёт состава (на случай изменений коллекции)
+            team2, info2 = get_best_futsal_team(user.collection, user.language)
+            if team2 is None:
+                text = f'<b>{t["tower_title"]}</b>\n\n' + t["tower_status_no_team"].format(level=next_level, enemy_ovr=next_enemy)
+            else:
+                player_ovr2 = int(info2)
+                roster = format_futsal_team_display(team2, user.language)
+                roster_title = "<b>Твой состав:</b>" if user.language == Language.RU else "<b>Your squad:</b>"
+                text = (
+                    f'<b>{t["tower_title"]}</b>\n\n'
+                    + t["tower_status"].format(level=next_level, player_ovr=player_ovr2, enemy_ovr=next_enemy)
+                    + f"\n\n{roster_title}\n{roster}"
+                )
+
+            await render_page(callback, image_basename="citadel", text=text, reply_markup=get_tower_keyboard(user.language))
+            return
+
+        # Level 10: выдаём 1 из 3 Immortal и закрываем до следующего сезона
+        reward_pool = get_immortal_pool()
+        reward = random.choice(reward_pool).copy()
+        reward["acquired_date"] = datetime.now().strftime("%d.%m.%Y")
+        reward["user_card_id"] = user.card_id_counter
+        user.card_id_counter += 1
+        user.collection.append(reward)
+
+        user.tower_rewarded_season = season
+        user.tower_level = TOWER_LEVELS + 1  # закрыть до следующего сезона
+        save_user_data()
+
+        card_name = reward.get("name_ru") if user.language == Language.RU else reward.get("name_en")
+        caption = t["tower_reward_text"].format(card_name=html.escape(card_name))
+
+        media = get_card_media(reward)
+        if media:
+            msg = await callback.message.answer_photo(media, caption=caption, parse_mode="HTML")
+            await save_tg_file_id(reward, msg)
+        else:
+            await callback.message.answer(caption, parse_mode="HTML")
+        return
+
+    # Поражение
+    roster = format_futsal_team_display(team, user.language)
+    roster_title = "<b>Твой состав:</b>" if user.language == Language.RU else "<b>Your squad:</b>"
+    text = (
+        f'<b>{t["tower_title"]}</b>\n\n'
+        + t["tower_lose_level"].format(need=enemy_ovr + 1, player_ovr=player_ovr, enemy_ovr=enemy_ovr)
+        + f"\n\n{roster_title}\n{roster}"
+    )
+    await render_page(callback, image_basename="citadel", text=text, reply_markup=get_tower_keyboard(user.language))
+
+
 @dp.callback_query(F.data == "battle_ai")
+
 async def callback_battle_ai(callback: CallbackQuery):
     try:
         await callback.answer()
@@ -3863,4 +4277,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n👋 Бот остановлен")
-
